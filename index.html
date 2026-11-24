@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Varada V N A Santosh — ML / Inference Engineering Notes</title>
+<meta name="description" content="ML / AI &amp; Inference Engineering notes by Varada V N A Santosh.">
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/hljs/github.min.css">
+</head>
+<body>
+<header class="site-nav">
+  <a class="brand" href="index.html">Varada V N A Santosh</a>
+  <nav>
+    <a href="index.html">Home</a>
+    <a href="index.html#notes">Notes</a>
+    <a href="index.html#about">About</a>
+    <a href="https://github.com/varadasantosh" target="_blank" rel="noopener">GitHub</a>
+  </nav>
+</header>
+<main>
+<section class="hero" id="top">
+  <h1>Varada V N A Santosh</h1>
+  <p class="tagline">AI / ML &amp; Inference Engineer</p>
+  <p class="lede">A knowledge base on the internals of modern deep-learning systems — GPU/CUDA kernel optimization, attention mechanisms, distributed training, and generative models. Written while going deep on how large language models are built, trained, and served efficiently.</p>
+  <div class="hero-links">
+    <a href="#notes">Read the notes &darr;</a>
+    <a href="https://github.com/varadasantosh" target="_blank" rel="noopener">GitHub</a>
+  </div>
+</section>
+<section id="notes" class="notes">
+  <h2>Notes</h2>
+  <div class="note-group">
+    <h3>GPU Programming &amp; GEMM Optimization</h3>
+    <p class="group-blurb">A deep dive into how matrix multiplication is made fast on GPUs — from GPU architecture and memory coalescing to naive, tiled, and warp/register-tiled GEMM, plus why CUTLASS and cuBLAS exist.</p>
+    <ul class="post-list">
+      <li><span class="idx">01</span><a href="posts/optimizing-gemm-gpu-architecture.html">Optimizing GEMM: GPU Architecture Essentials</a><span class="badge">Featured</span></li>
+      <li><span class="idx">02</span><a href="posts/understanding-cuda-gemm.html">Understanding CUDA GEMM: Foundations for Optimization</a><span class="badge">Featured</span></li>
+      <li><span class="idx">03</span><a href="posts/thread-indexing.html">GPU Thread Hierarchy and Indexing</a></li>
+      <li><span class="idx">04</span><a href="posts/bank-conflicts.html">Bank Conflicts (Shared Memory)</a></li>
+      <li><span class="idx">05</span><a href="posts/cuda-infra-terminology.html">CUDA Compute Capability, Driver, and Toolkit Compatibility Guide</a></li>
+      <li><span class="idx">06</span><a href="posts/cuda-training-setup.html">CUDA Setup on AWS - Terraform</a></li>
+    </ul>
+  </div>
+  <div class="note-group">
+    <h3>Transformers &amp; Attention</h3>
+    <p class="group-blurb">From tokenizing a dataset to the evolution of attention, multi-head attention, FlashAttention, and rotary positional embeddings.</p>
+    <ul class="post-list">
+      <li><span class="idx">01</span><a href="posts/prepare-dataset.html">Dataset Preparation</a></li>
+      <li><span class="idx">02</span><a href="posts/attention.html">Evolution of Attention</a></li>
+      <li><span class="idx">03</span><a href="posts/multihead-attention.html">Peek Into MultiHead Attention</a></li>
+      <li><span class="idx">04</span><a href="posts/flash-attention.html">Flash Attention</a></li>
+      <li><span class="idx">05</span><a href="posts/rope-2.html">Rotary Positional Embeddings</a></li>
+    </ul>
+  </div>
+  <div class="note-group">
+    <h3>Distributed Training</h3>
+    <p class="group-blurb">Scaling model training across multiple GPUs and nodes with PyTorch DDP.</p>
+    <ul class="post-list">
+      <li><span class="idx">01</span><a href="posts/distributed-training.html">Distributed Training</a></li>
+      <li><span class="idx">02</span><a href="posts/pytorch-dpp.html">Pytorch DDP Setup -Multi Node</a></li>
+    </ul>
+  </div>
+  <div class="note-group">
+    <h3>Generative &amp; Vision Models</h3>
+    <p class="group-blurb">Variational autoencoders — the theory and a working implementation.</p>
+    <ul class="post-list">
+      <li><span class="idx">01</span><a href="posts/vae-notes.html">Variational AutoEncoder Concepts</a></li>
+      <li><span class="idx">02</span><a href="posts/vae-implementation.html">Variational AutoEncoder Implementation</a></li>
+    </ul>
+  </div>
+</section>
+<section id="about" class="about">
+  <h2>About</h2>
+  <div class="content">
+<p>I'm an AI/ML Engineer with 16+ years of experience across security, backend development, data engineering, and DevOps.</p>
+<p>Currently, I focus on designing and deploying production-grade AI systems using deep learning, NLP, and large language models (LLMs). My technical strengths include:</p>
+<ul>
+<li>Neural Networks (ANN,CNN,RNN)</li>
+<li>Transformer Architecture</li>
+<li>Distributed training</li>
+<li>MLOps using PyTorch, Docker, and Kubernetes</li>
+<li>Cloud Platforms GCP,AWS,Azure</li>
+<li>CUDA GEMM optimizations</li>
+</ul>
+<p>I deliver high-performance, cloud-native solutions across platforms like GCP, AWS, and Azure.</p>
+<p>My career began as an SAP Security Consultant and has evolved into a full-stack ML practitioner role. This journey uniquely equips me to design and operationalize end-to-end machine learning pipelines.</p>
+<p>I'm also expanding my expertise in Deep Learning &amp; ML through Scaler’s Data Science Program, while leading strategic AI initiatives that align closely with enterprise needs.</p>
+<hr>
+<h2 id="full-stack-llm-systems-from-data-to-deployment">Full-Stack LLM Systems | From Data to Deployment</h2>
+<p>My background spans multiple areas critical to LLM development, and with my current LLM expertise, I can bring them together to build and optimize the full lifecycle.</p>
+<ul>
+<li><strong>Data Engineering</strong>: Scalable pipelines, tokenization, dataset curation.</li>
+<li><strong>Model Design</strong>: Transformers, Attention Mechanisms, Positional Encoding.</li>
+<li><strong>Pre-Training</strong>: Distributed training with mixed precision, DeepSpeed, FSDP.</li>
+<li><strong>Fine-Tuning</strong>: Efficient adaptation with LoRA, QLoRA, quantization.</li>
+<li><strong>Continual Learning</strong>: Retraining models with new data and domain adaptation.</li>
+</ul>
+<hr>
+<h2 id="current-deep-dive-topics">Current Deep-Dive Topics</h2>
+<ul>
+<li><strong>Transformer Architectures</strong></li>
+<li><strong>Distributed Training at Scale</strong></li>
+<li><strong>GPU Programming and Optimization</strong></li>
+</ul>
+<hr>
+  </div>
+</section>
+</main>
+<footer class="site-footer">
+  <span>&copy; Varada V N A Santosh</span>
+  <a href="#top" class="totop">Back to top &uarr;</a>
+</footer>
+<div id="lightbox" hidden><img alt=""></div>
+<script src="assets/hljs/highlight.min.js"></script>
+<script src="assets/katex/katex.min.js"></script>
+<script src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('pre code').forEach(function(b){hljs.highlightElement(b);});
+  renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'$',right:'$',display:false},
+    {left:'\\(',right:'\\)',display:false}
+  ],throwOnError:false});
+  // heading anchors
+  document.querySelectorAll('.content h1[id],.content h2[id],.content h3[id]').forEach(function(h){
+    h.classList.add('anchored');
+    h.addEventListener('click',function(e){if(e.target===h){location.hash=h.id;}});
+  });
+  // copy buttons
+  document.querySelectorAll('.content pre').forEach(function(pre){
+    var btn=document.createElement('button'); btn.className='copy'; btn.textContent='Copy';
+    btn.addEventListener('click',function(){
+      navigator.clipboard.writeText(pre.innerText).then(function(){
+        btn.textContent='Copied'; setTimeout(function(){btn.textContent='Copy';},1500);
+      });
+    });
+    pre.appendChild(btn);
+  });
+  // lightbox
+  var lb=document.getElementById('lightbox'), lbimg=lb.querySelector('img');
+  document.querySelectorAll('.content img.zoom').forEach(function(im){
+    im.addEventListener('click',function(){lbimg.src=im.currentSrc||im.src; lb.hidden=false;});
+  });
+  lb.addEventListener('click',function(){lb.hidden=true; lbimg.src='';});
+});
+</script>
+</body>
+</html>

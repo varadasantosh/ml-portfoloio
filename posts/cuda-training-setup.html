@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CUDA Setup on AWS - Terraform · Varada V N A Santosh</title>
+<meta name="description" content="ML / AI &amp; Inference Engineering notes by Varada V N A Santosh.">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="../assets/hljs/github.min.css">
+</head>
+<body>
+<header class="site-nav">
+  <a class="brand" href="../index.html">Varada V N A Santosh</a>
+  <nav>
+    <a href="../index.html">Home</a>
+    <a href="../index.html#notes">Notes</a>
+    <a href="../index.html#about">About</a>
+    <a href="https://github.com/varadasantosh" target="_blank" rel="noopener">GitHub</a>
+  </nav>
+</header>
+<main>
+<article class="post" id="top">
+  <p class="eyebrow"><a href="../index.html#notes">GPU Programming &amp; GEMM Optimization</a> · 7 min read</p>
+  <h1>CUDA Setup on AWS - Terraform</h1>
+  <details class="toc"><summary>On this page</summary><ul><li class="l1"><a href="#aws-offerings">AWS Offerings</a></li><li class="l1"><a href="#aws-ec2-instances">AWS EC2 Instances</a></li><li class="l2"><a href="#ec2-manual-setup-vanilla-ec2">EC2 + Manual Setup (Vanilla EC2):</a></li><li class="l1"><a href="#aws-deep-learning-containers-dlc">AWS Deep Learning Containers (DLC)</a></li><li class="l1"><a href="#deep-learning-amis-dlami">Deep Learning AMIs (DLAMI)</a></li><li class="l1"><a href="#note">Note</a></li><li class="l1"><a href="#steps-to-setup-using-terraform">Steps to Setup using Terraform</a></li><li class="l2"><a href="#terraform">Terraform</a></li><li class="l2"><a href="#providertf">provider.tf</a></li><li class="l2"><a href="#variablestf">variables.tf</a></li><li class="l2"><a href="#terraformtfvars">terraform.tfvars</a></li><li class="l2"><a href="#install-script-cuda-driver-docker-cuda-container-toolkit">Install Script (CUDA Driver + Docker + CUDA Container Toolkit )</a></li><li class="l2"><a href="#main-terraform-script">Main Terraform script</a></li><li class="l1"><a href="#post-terraform-setup-">Post Terraform Setup:-</a></li><li class="l2"><a href="#terraform-plan">⤵ terraform plan</a></li><li class="l2"><a href="#terraform-apply">⤵ terraform apply</a></li><li class="l2"><a href="#ml-dev-instance-aws">⤵ ML Dev Instance (AWS)</a></li><li class="l2"><a href="#verify-driver-installation-using-nvidia-smi">Verify Driver Installation using nvidia-smi</a></li><li class="l2"><a href="#run-container-execute-nvidia-smi">⤵ Run Container &amp;amp; execute nvidia-smi</a></li><li class="l2"><a href="#pytorch-container-install-jupyter-on-pytorch-container">⤵ Pytorch Container &amp;amp; Install Jupyter on Pytorch Container</a></li><li class="l2"><a href="#accessing-jupyter-notebook-outside-ec2">⤵ Accessing Jupyter notebook outside EC2</a></li><li class="l1"><a href="#resources-">Resources:-</a></li></ul></details>
+  <div class="content">
+<p>This article provides a brief introduction on setting up a local development environment for deep learning model development and training using AWS. Given the high cost of GPUs, purchasing them for individual or organizational use may not be feasible. Even if an organization already owns GPUs, they might need to upgrade to newer architectures to benefit from features and performance improvements in the latest GPU generations. This makes hyperscalers such as AWS, Azure, and GCP attractive options for flexible, scalable GPU resources.</p>
+<p>In this article, we focus on different ways to set up a deep learning environment using AWS offerings.</p>
+<h1 id="aws-offerings">AWS Offerings</h1>
+<p>There are several options to create a development or training environment on AWS:</p>
+<ol>
+<li>AWS EC2 instance </li>
+<li>Deep Learning AMI (DLAMI)</li>
+<li>AWS Deep Learning Containers which can be run on \
+    ▪  EC2
+    ▪  ECS
+    ▪  EKS</li>
+</ol>
+<h1 id="aws-ec2-instances">AWS EC2 Instances</h1>
+<p>Using plain EC2 GPU instances gives you a virtual server with GPU hardware but no preinstalled deep learning frameworks or CUDA software. You are responsible for manually installing the <code>NVIDIA driver</code>, <code>CUDA toolkit</code> and any frameworks like <code>PyTorch</code> or <code>TensorFlow</code>. This option offers maximum flexibility but requires more setup effort.</p>
+<h2 id="ec2-manual-setup-vanilla-ec2">EC2 + Manual Setup (Vanilla EC2):</h2>
+<p>we start with a blank EC2 instance &amp;  install below components</p>
+<ul>
+<li>NVIDIA Drivers</li>
+<li>CUDA Toolkit</li>
+<li>cuDNN</li>
+<li>Deep learning frameworks (TensorFlow, PyTorch, etc.)</li>
+<li>Python, pip, virtual environments</li>
+<li>Docker</li>
+</ul>
+<h1 id="aws-deep-learning-containers-dlc">AWS Deep Learning Containers (DLC)</h1>
+<p>AWS provides prebuilt Docker images with popular DL frameworks and CUDA support. These containers can run on:</p>
+<pre><code>▪ EC2: Directly run containers on an EC2 instance with NVIDIA drivers and NVIDIA Container Toolkit installed.
+▪ ECS: AWS’s fully managed container orchestration service, useful for deploying DL workloads in production or distributed setups.
+▪ EKS: AWS’s managed Kubernetes service, ideal for scalable and containerized ML workloads with orchestration benefits of Kubernetes.
+</code></pre>
+<p>They are designed to be run on top of an environment that has Docker and NVIDIA Container Toolkit installed, along with the appropriate GPU drivers, for Deep Learning containers to execute we need to install below components</p>
+<ul>
+<li>NVIDIA Drivers</li>
+<li>Docker</li>
+<li>NVIDIA Container Toolkit</li>
+</ul>
+<h1 id="deep-learning-amis-dlami">Deep Learning AMIs (DLAMI)</h1>
+<p>These are specialized Amazon Machine Images provided by AWS with preinstalled NVIDIA drivers, CUDA, cuDNN, and major deep learning frameworks (e.g., TensorFlow, PyTorch, MXNet). DLAMIs enable you to launch a GPU-powered instance that is ready to run DL workloads almost immediately. This reduces setup time significantly compared to a plain EC2 instance.</p>
+<h1 id="note">Note</h1>
+<p>While each of the approaches have various advantages and disadvantages</p>
+<ol>
+<li>
+<p>DLAMI is best option quickly start with development and training, it offers redcued complexity to setup they are specific to AWS and not portable to other Hyperscalers.</p>
+</li>
+<li>
+<p>For production Deployment and Large scale training , we need scalable approach which is achieved using container orchestrators
+   like <code>ECS</code> &amp; <code>EKS</code> Deep Learning containers suits exactly this usecase</p>
+</li>
+<li>
+<p>Vanilla EC2 + Manualsetup is more complex , this is helpful to understand how the entire deep learning software stack (drivers, CUDA, cuDNN, frameworks) interacts and how to troubleshoot dependencies, encountering highly unusual or persistent issues with a DLAMI or a containerized environment, sometimes going back to a bare EC2 instance and manually building the stack piece by piece can help isolate where a problem lies.</p>
+</li>
+<li>
+<p>While <code>DLAMI</code> and <code>manual EC2</code> setups are fine for small-scale, single-instance workloads for quick prototyping, they don’t offer elastic scaling , can't orchestrate multiple training/inference jobs</p>
+</li>
+</ol>
+<h1 id="steps-to-setup-using-terraform">Steps to Setup using Terraform</h1>
+<pre><code>▪  Provision EC2 Instance
+▪  Use user_data script to install NVIDIA Drivers + NVIDIA Container Toolkit
+</code></pre>
+<h2 id="terraform">Terraform</h2>
+<h2 id="providertf">provider.tf</h2>
+<pre><code>    provider "aws"{
+
+        region = var.aws_region
+    }
+</code></pre>
+<h2 id="variablestf">variables.tf</h2>
+<pre><code>    variable "aws_region" {
+
+        description = "AWS region to deploy to"
+        type        = string
+        default     = "us-west-2"
+
+        }
+
+    variable "instance_type" {
+
+        description = "EC2 instance type"
+        type        = string
+        default     = "g4dn.xlarge"
+
+        }
+
+    variable "key_name" {
+
+        description = "SSH key pair name"
+        type        = string
+
+        }
+
+    variable "subnet_id" {
+
+        description = "Subnet to launch EC2 instance in"
+        type        = string
+
+        }
+
+    variable "ami_id" {
+
+        description = "AMI ID with a supported OS for NVIDIA drivers"
+        type        = string
+
+        }
+
+    variable "security_group" {
+
+        description = "Security Group to be attached to EC2"
+        type        = string
+
+        }
+
+    variable "vpc_id" {
+
+            description = "VPC for EC2 Instance"
+            type = string
+
+        }
+
+    variable "ebs_volume_size_gb" {
+
+        description = "The size of the EBS volume in GiB."
+        type        = number
+        default     = 40 # Example: 10 GiB
+
+        }
+
+    variable "ebs_volume_type" {
+
+        description = "The type of the EBS volume (e.g., gp2, gp3, io1, st1, sc1)."
+        type        = string
+        default     = "gp3" # General Purpose SSD
+
+        }
+
+    variable "ebs_device_name" {
+
+        description = "The device name to expose to the instance (e.g., /dev/sdf)."
+        type        = string
+        default     = "/dev/sda1" # Common device name for Linux instances
+
+        }
+
+    variable "enable_gpu_software_install" {
+
+            description = "Flag to decide whether to install the GPU software or not"
+            type = bool
+            default = false
+
+        }
+</code></pre>
+<h2 id="terraformtfvars">terraform.tfvars</h2>
+<pre><code>    aws_region = "us-west-2"
+    instance_type = "g4dn.xlarge"
+    key_name = "pytorch-dpp"
+    subnet_id = "subnet-06bdc857079a90234"
+    ami_id = "ami-05f991c49d264708f"
+    security_group = "sg-0d6e28e904eb28a87"
+    vpc_id = "vpc-0160ad53630d09c45"
+    ebs_volume_size_gb=40
+    ebs_volume_type="gp3"
+    ebs_device_name="/dev/sda2"
+    enable_gpu_software_install = true
+</code></pre>
+<h2 id="install-script-cuda-driver-docker-cuda-container-toolkit">Install Script (CUDA Driver + Docker  + CUDA Container Toolkit )</h2>
+<pre><code>        #!/bin/bash
+
+        # Install CUDA Driver
+
+        set -e
+
+        set -x
+
+
+        echo "Installing CUDA Drivers"
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+        sudo dpkg -i cuda-keyring_1.1-1_all.deb
+        sudo apt-get update
+        sudo apt-get install -y cuda-drivers
+        echo "CUDA Driver Installation Completed"
+
+        # Install Docker
+        # Add Docker's official GPG key:
+        echo "Installing Docker Engine"
+        sudo apt-get update
+        sudo apt-get install ca-certificates curl
+        sudo install -m 0755 -d /etc/apt/keyrings
+        sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+        sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+
+        # Add the repository to Apt sources:
+        echo \
+        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+        $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
+        sudo tee /etc/apt/sources.list.d/docker.list &gt; /dev/null
+        sudo apt-get update
+
+        sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+        echo "Docker Engine Installation completed"
+
+        # Install NVIDIA Container Toolkit
+
+        echo "Installing NVIDIA Container Toolkit "
+        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
+        &amp;&amp; curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+            sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+            sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+        sudo apt-get update
+
+        export NVIDIA_CONTAINER_TOOLKIT_VERSION=1.17.8-1
+        sudo apt-get install -y \
+            nvidia-container-toolkit=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
+            nvidia-container-toolkit-base=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
+            libnvidia-container-tools=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
+            libnvidia-container1=${NVIDIA_CONTAINER_TOOLKIT_VERSION}
+
+
+        sudo nvidia-ctk runtime configure --runtime=docker
+
+        sudo systemctl restart docker
+
+        nvidia-ctk runtime configure --runtime=docker --config=$HOME/.config/docker/daemon.json
+
+        echo "Configuration of NVIDIA Container Toolkit completed "
+
+        echo "User data script finished."
+</code></pre>
+<h2 id="main-terraform-script">Main Terraform script</h2>
+<pre><code>    resource "aws_instance" "ml-dev-1" {
+        ami                         = var.ami_id
+        instance_type               = var.instance_type
+        subnet_id                   = var.subnet_id
+        key_name                    = var.key_name
+        vpc_security_group_ids      = [var.security_group]
+        associate_public_ip_address = true
+
+        root_block_device {
+            volume_size = var.ebs_volume_size_gb
+            volume_type = var.ebs_volume_type # You can also make this a variable if needed
+            delete_on_termination = true # Default behavior, but good to be explicit
+        }
+
+        user_data = var.enable_gpu_software_install ? file("${path.module}/install_gpu_software.sh") : ""
+
+        tags = {
+            Name = "ml-dev-instance"
+        }
+    }
+
+
+    output "instance_id" {
+        description = "The ID of the EC2 instance."
+        value       = aws_instance.ml-dev-1.id
+    }
+
+    output "instance_public_ip" {
+        description = "The public IP address of the EC2 instance."
+        value       = aws_instance.ml-dev-1.public_ip
+    }
+</code></pre>
+<h1 id="post-terraform-setup-">Post Terraform Setup:-</h1>
+<h2 id="terraform-plan">⤵   terraform plan</h2>
+<figure class="fig"><img alt="terrafom_plan" src="../images/cuda/dev-setup/terraform-plan.png" loading="lazy" decoding="async" class="zoom"></figure>
+<h2 id="terraform-apply">⤵  terraform apply</h2>
+<figure class="fig"><img alt="terraform_applu" src="../images/cuda/dev-setup/terraform-apply.png" loading="lazy" decoding="async" class="zoom"></figure>
+<h2 id="ml-dev-instance-aws">⤵  ML Dev Instance (AWS)</h2>
+<figure class="fig"><img alt="ml_dev_instance" src="../images/cuda/dev-setup/ml-dev-instance.png" loading="lazy" decoding="async" class="zoom"></figure>
+<h2 id="verify-driver-installation-using-nvidia-smi">Verify Driver Installation using <code>nvidia-smi</code></h2>
+<figure class="fig"><img alt="check_nvidia" src="../images/cuda/dev-setup/nvidia-smi.png" loading="lazy" decoding="async" class="zoom"></figure>
+<h2 id="run-container-execute-nvidia-smi">⤵ Run Container &amp; execute <code>nvidia-smi</code></h2>
+<p><code>sudo docker run -it --gpus all --runtime=nvidia ubuntu nvidia-smi</code></p>
+<figure class="fig"><img alt="nvidia-smi-from-container" src="../images/cuda/dev-setup/nvidia-smi-from-container.png" loading="lazy" decoding="async" class="zoom"></figure>
+<h2 id="pytorch-container-install-jupyter-on-pytorch-container">⤵  Pytorch Container &amp;  Install Jupyter on Pytorch Container</h2>
+<p><code>sudo docker run -it --gpus all --runtime=nvidia -p 8888:8888 pytorch/pytorch:latest 
+     pip install jupyter
+     jupyter lab --ip=0.0.0.0 --port=8888 --allow-root --no-browser</code>
+ <img alt="pytorch+jupyter" src="../images/cuda/dev-setup/jupyter-server-from-container.png" loading="lazy" decoding="async" class="zoom"></p>
+<h2 id="accessing-jupyter-notebook-outside-ec2">⤵  Accessing Jupyter notebook outside EC2</h2>
+<p>```
+    ssh -i pytorch-dpp.pem -L 8888:localhost:8888 ubuntu@ec2-54-201-35-133.us-west-2.compute.amazonaws.com</p>
+<p>```
+  <img alt="accessing-pytorch-from-local" src="../images/cuda/dev-setup/accessing-pytorch-from-local.png" loading="lazy" decoding="async" class="zoom"></p>
+<h1 id="resources-">Resources:-</h1>
+<ul>
+<li><a href="https://docs.aws.amazon.com/dlami/latest/devguide/tutorial-pytorch.html">AWS Deep Learning AMI</a></li>
+<li><a href="https://docs.aws.amazon.com/deep-learning-containers/latest/devguide/deep-learning-containers-ec2-tutorials-training.html#deep-learning-containers-ec2-tutorials-training-pytorch">AWS Deep Learning Containers</a></li>
+<li><a href="https://cloud.google.com/deep-learning-containers/docs">Google Deep Learning Containers</a></li>
+<li><a href="https://cloud.google.com/deep-learning-vm/docs/pytorch_start_instance">Google+Pytoch_VM</a></li>
+<li><a href="https://docs.docker.com/engine/install/ubuntu/">Docker-Installation</a></li>
+<li><a href="https://hub.docker.com/r/pytorch/pytorch/">Docker-pytorch</a></li>
+</ul>
+  </div>
+  <nav class="post-updown"><a class="pn prev" href="cuda-infra-terminology.html">&larr; CUDA Compute Capability, Driver, and Toolkit Compatibility Guide</a><a class="pn next" href="prepare-dataset.html">Dataset Preparation &rarr;</a></nav>
+</article>
+</main>
+<footer class="site-footer">
+  <span>&copy; Varada V N A Santosh</span>
+  <a href="#top" class="totop">Back to top &uarr;</a>
+</footer>
+<div id="lightbox" hidden><img alt=""></div>
+<script src="../assets/hljs/highlight.min.js"></script>
+<script src="../assets/katex/katex.min.js"></script>
+<script src="../assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('pre code').forEach(function(b){hljs.highlightElement(b);});
+  renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'$',right:'$',display:false},
+    {left:'\\(',right:'\\)',display:false}
+  ],throwOnError:false});
+  // heading anchors
+  document.querySelectorAll('.content h1[id],.content h2[id],.content h3[id]').forEach(function(h){
+    h.classList.add('anchored');
+    h.addEventListener('click',function(e){if(e.target===h){location.hash=h.id;}});
+  });
+  // copy buttons
+  document.querySelectorAll('.content pre').forEach(function(pre){
+    var btn=document.createElement('button'); btn.className='copy'; btn.textContent='Copy';
+    btn.addEventListener('click',function(){
+      navigator.clipboard.writeText(pre.innerText).then(function(){
+        btn.textContent='Copied'; setTimeout(function(){btn.textContent='Copy';},1500);
+      });
+    });
+    pre.appendChild(btn);
+  });
+  // lightbox
+  var lb=document.getElementById('lightbox'), lbimg=lb.querySelector('img');
+  document.querySelectorAll('.content img.zoom').forEach(function(im){
+    im.addEventListener('click',function(){lbimg.src=im.currentSrc||im.src; lb.hidden=false;});
+  });
+  lb.addEventListener('click',function(){lb.hidden=true; lbimg.src='';});
+});
+</script>
+</body>
+</html>

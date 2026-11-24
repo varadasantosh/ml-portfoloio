@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CUDA Compute Capability, Driver, and Toolkit Compatibility Guide · Varada V N A Santosh</title>
+<meta name="description" content="ML / AI &amp; Inference Engineering notes by Varada V N A Santosh.">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="../assets/hljs/github.min.css">
+</head>
+<body>
+<header class="site-nav">
+  <a class="brand" href="../index.html">Varada V N A Santosh</a>
+  <nav>
+    <a href="../index.html">Home</a>
+    <a href="../index.html#notes">Notes</a>
+    <a href="../index.html#about">About</a>
+    <a href="https://github.com/varadasantosh" target="_blank" rel="noopener">GitHub</a>
+  </nav>
+</header>
+<main>
+<article class="post" id="top">
+  <p class="eyebrow"><a href="../index.html#notes">GPU Programming &amp; GEMM Optimization</a> · 4 min read</p>
+  <h1>CUDA Compute Capability, Driver, and Toolkit Compatibility Guide</h1>
+  <details class="toc"><summary>On this page</summary><ul><li class="l1"><a href="#cuda-compute-capability">CUDA Compute Capability</a></li><li class="l1"><a href="#cuda-driver">CUDA Driver</a></li><li class="l1"><a href="#cuda-toolkit">CUDA Toolkit</a></li><li class="l1"><a href="#backward-forward-compatibility">Backward &amp;amp; Forward Compatibility</a></li><li class="l2"><a href="#gpu-architecture-compute-capability">🟢 GPU Architecture &amp;amp; Compute Capability</a></li><li class="l2"><a href="#cuda-driver-cuda-toolkit">🟢 CUDA Driver &amp;amp; CUDA Toolkit</a></li><li class="l1"><a href="#resources">Resources</a></li></ul></details>
+  <div class="content">
+<h1 id="cuda-compute-capability">CUDA Compute Capability</h1>
+<p>Compute capability is a version number assigned by NVIDIA to its various GPU architectures. It represents a set of hardware and software features supported by a particular GPU. GPUs with a higher compute capability number generally have more advanced features, more processing power, better efficiency, and the ability to execute the latest CUDA instructions and functionalities.</p>
+<ul>
+<li>A numeric version (e.g., 7.5, 8.0, 8.6, 9.0) representing a GPU’s architecture features and supported instructions.</li>
+<li>Determines which CUDA features your GPU supports.</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Architecture</th>
+<th>Compute Capability</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Tesla</td>
+<td>1.0 – 1.3</td>
+</tr>
+<tr>
+<td>Kepler</td>
+<td>3.0 – 3.7</td>
+</tr>
+<tr>
+<td>Fermi</td>
+<td>2.0 – 2.1</td>
+</tr>
+<tr>
+<td>Maxwell</td>
+<td>5.0 – 5.3</td>
+</tr>
+<tr>
+<td>Pascal</td>
+<td>6.0 – 6.2</td>
+</tr>
+<tr>
+<td>Volta</td>
+<td>7.0</td>
+</tr>
+<tr>
+<td>Turing</td>
+<td>7.5</td>
+</tr>
+<tr>
+<td>Ampere</td>
+<td>8.0 – 8.6</td>
+</tr>
+<tr>
+<td>Ada Lovelace</td>
+<td>8.9</td>
+</tr>
+<tr>
+<td>Hopper</td>
+<td>9.0</td>
+</tr>
+<tr>
+<td>Blackwell</td>
+<td>10.0</td>
+</tr>
+<tr>
+<td>Blackwell</td>
+<td>12.0</td>
+</tr>
+</tbody>
+</table>
+<h1 id="cuda-driver">CUDA Driver</h1>
+<ul>
+<li>A kernel-level NVIDIA driver installed on the host OS.</li>
+<li>Enables the OS to communicate with the GPU hardware.</li>
+<li>Must be installed on your EC2 instance or host where we are running our GPU Workloads</li>
+<li>The driver version must be &gt;= minimum required version for the CUDA runtime you plan to use.</li>
+</ul>
+<h1 id="cuda-toolkit">CUDA Toolkit</h1>
+<p>The CUDA Toolkit is NVIDIA’s official collection of tools, libraries, and compilers that developers use to write, build, and optimize GPU-accelerated applications. It includes the nvcc compiler for CUDA C/C++, runtime libraries like cuBLAS and cuDNN, and debugging and profiling tools. Essentially, the toolkit provides everything you need to develop software that runs efficiently on NVIDIA GPUs.</p>
+<pre><code>1️⃣ Compilers &amp; Runtimes
+
+▪  NVIDIA CUDA Compiler (NVCC)
+▪  CUDA Runtime Library (cudart)
+▪  CUDA Driver (User-mode component)
+▪  PTX (Parallel Thread Execution) Assembler
+
+2️⃣ Core Libraries (Highly Optimized for GPU)
+
+▪  cuBLAS
+▪  cuFFT
+▪  cuRAND
+▪  cuSPARSE
+▪  cuSOLVER
+
+3️⃣ Developer Tools
+
+▪  NVIDIA Nsight Systems
+▪  NVIDIA Nsight Compute
+▪  CUDA GDB
+▪  CUDA-MEMCHECK
+▪  NVIDIA Visual Profiler
+▪  CUDA-gdb-server
+</code></pre>
+<h1 id="backward-forward-compatibility">Backward &amp; Forward Compatibility</h1>
+<h2 id="gpu-architecture-compute-capability">🟢 GPU Architecture &amp; Compute Capability</h2>
+<p><strong>✅ Forward Compatibility(YES):</strong></p>
+<p>Code compiled for an older compute capability (7.5) can generally run on GPUs with a higher compute capability<strong>(&gt;7.5)</strong>. However, it won't take advantage of the newer features of the higher CC.</p>
+<p>Code compiled for a newer compute capability will not run on GPUs with an older, unsupported compute capability.</p>
+<p><strong>❌ Backward Compatibility (NO):</strong></p>
+<p>Code compiled for a newer/higher Compute Capability (e.g., CC 8.6 Ampere) will NOT run on a GPU with an older/lower Compute Capability (e.g., CC 7.5 Turing).</p>
+<h2 id="cuda-driver-cuda-toolkit">🟢 CUDA Driver &amp; CUDA Toolkit</h2>
+<h3 id="drivers-perspective-lack-of-forward-compatibility">Driver's Perspective (Lack of Forward Compatibility)</h3>
+<pre><code>- Forward Compatibility (NO for Driver / YES for Toolkit's output): An older CUDA Driver cannot run CUDA code compiled with a newer CUDA Toolkit.
+
+- The older driver doesn't "know" about new APIs, features, or instruction sets introduced in the newer Toolkit.
+</code></pre>
+<h3 id="toolkits-perspective-forward-compatibility-of-compiled-code">Toolkit's Perspective (Forward Compatibility of Compiled Code):</h3>
+<pre><code>- Code compiled with an older CUDA Toolkit can generally run on systems with a newer CUDA Driver.
+
+- Newer drivers are designed to be compatible with code generated by previous Toolkit versions. This ensures that existing applications continue to work when users update their drivers.
+</code></pre>
+<h3 id="drivers-perspective-backward-compatibility">Driver's Perspective (Backward Compatibility):</h3>
+<pre><code>- A newer CUDA Driver can run CUDA code compiled with an older CUDA Toolkit.
+
+- The latest drivers are built to understand and execute the instruction sets and API calls from previous Toolkit versions.
+</code></pre>
+<h3 id="toolkits-perspective-lack-of-backward-compatibility-of-compiled-code">Toolkit's Perspective (Lack of Backward Compatibility of Compiled Code):</h3>
+<pre><code>- Code compiled with a newer CUDA Toolkit will generally not run on systems with an older CUDA Driver.
+
+- The newer Toolkit might generate code that requires features or driver APIs only present in the corresponding newer or future drivers
+</code></pre>
+<h3 id="important-note-starting-with-cuda-toolkit-101-and-nvidia-driver-r418-forward-compatibility-was-introduced-through-the-cuda-compatibility-package-this-allows-older-drivers-to-run-applications-built-with-newer-cuda-toolkits-enabling-development-teams-to-use-updated-toolkits-with-new-libraries-bug-fixes-and-optimizations-while-still-supporting-existing-older-gpu-architectures-please-refer-this-documentation">Important note: Starting with CUDA Toolkit 10.1 and NVIDIA driver R418, forward compatibility was introduced through the CUDA Compatibility Package. This allows older drivers to run applications built with newer CUDA Toolkits, enabling development teams to use updated toolkits — with new libraries, bug fixes, and optimizations — while still supporting existing older GPU architectures. Please Refer this <a href="https://docs.nvidia.com/deploy/cuda-compatibility/">documentation</a></h3>
+<h1 id="resources">Resources</h1>
+<ul>
+<li><a href="https://www.nvidia.com/en-in/technologies/"><strong>NVIDIA GPU Architectures</strong></a></li>
+<li><a href="https://developer.nvidia.com/cuda-gpus"><strong>CUDA Compute Capabilities (CC) by GPU</strong></a></li>
+<li><a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#compute-capabilities"><strong>Features by Compute Capability</strong></a></li>
+<li><a href="https://docs.nvidia.com/deploy/cuda-compatibility/"><strong>CUDA Toolkit and Driver Compatibility Guide</strong></a></li>
+</ul>
+  </div>
+  <nav class="post-updown"><a class="pn prev" href="bank-conflicts.html">&larr; Bank Conflicts (Shared Memory)</a><a class="pn next" href="cuda-training-setup.html">CUDA Setup on AWS - Terraform &rarr;</a></nav>
+</article>
+</main>
+<footer class="site-footer">
+  <span>&copy; Varada V N A Santosh</span>
+  <a href="#top" class="totop">Back to top &uarr;</a>
+</footer>
+<div id="lightbox" hidden><img alt=""></div>
+<script src="../assets/hljs/highlight.min.js"></script>
+<script src="../assets/katex/katex.min.js"></script>
+<script src="../assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('pre code').forEach(function(b){hljs.highlightElement(b);});
+  renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'$',right:'$',display:false},
+    {left:'\\(',right:'\\)',display:false}
+  ],throwOnError:false});
+  // heading anchors
+  document.querySelectorAll('.content h1[id],.content h2[id],.content h3[id]').forEach(function(h){
+    h.classList.add('anchored');
+    h.addEventListener('click',function(e){if(e.target===h){location.hash=h.id;}});
+  });
+  // copy buttons
+  document.querySelectorAll('.content pre').forEach(function(pre){
+    var btn=document.createElement('button'); btn.className='copy'; btn.textContent='Copy';
+    btn.addEventListener('click',function(){
+      navigator.clipboard.writeText(pre.innerText).then(function(){
+        btn.textContent='Copied'; setTimeout(function(){btn.textContent='Copy';},1500);
+      });
+    });
+    pre.appendChild(btn);
+  });
+  // lightbox
+  var lb=document.getElementById('lightbox'), lbimg=lb.querySelector('img');
+  document.querySelectorAll('.content img.zoom').forEach(function(im){
+    im.addEventListener('click',function(){lbimg.src=im.currentSrc||im.src; lb.hidden=false;});
+  });
+  lb.addEventListener('click',function(){lb.hidden=true; lbimg.src='';});
+});
+</script>
+</body>
+</html>

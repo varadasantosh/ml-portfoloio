@@ -1,0 +1,1516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Understanding CUDA GEMM: Foundations for Optimization · Varada V N A Santosh</title>
+<meta name="description" content="ML / AI &amp; Inference Engineering notes by Varada V N A Santosh.">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="../assets/hljs/github.min.css">
+</head>
+<body>
+<header class="site-nav">
+  <a class="brand" href="../index.html">Varada V N A Santosh</a>
+  <nav>
+    <a href="../index.html">Home</a>
+    <a href="../index.html#notes">Notes</a>
+    <a href="../index.html#about">About</a>
+    <a href="https://github.com/varadasantosh" target="_blank" rel="noopener">GitHub</a>
+  </nav>
+</header>
+<main>
+<article class="post" id="top">
+  <p class="eyebrow"><a href="../index.html#notes">GPU Programming &amp; GEMM Optimization</a> · 50 min read</p>
+  <h1>Understanding CUDA GEMM: Foundations for Optimization</h1>
+  <details class="toc"><summary>On this page</summary><ul><li class="l1"><a href="#matrix-multiplication">Matrix Multiplication</a></li><li class="l1"><a href="#the-computational-challenge">The Computational Challenge</a></li><li class="l1"><a href="#the-naive-sequential-approach-cpu">The Naive Sequential Approach (CPU)</a></li><li class="l1"><a href="#the-parallelization-opportunity">The Parallelization Opportunity</a></li><li class="l1"><a href="#naive-cuda-kernel">Naive CUDA Kernel</a></li><li class="l2"><a href="#configurations-for-kernel-launch">Configurations for Kernel Launch</a></li><li class="l2"><a href="#kernel-gpu-configurations">Kernel &amp;amp; GPU Configurations:</a></li><li class="l1"><a href="#naive-gemm">Naive GEMM</a></li><li class="l2"><a href="#memory-access-patterns-and-coalescing-analysis">Memory Access Patterns and Coalescing Analysis:</a></li><li class="l2"><a href="#access-pattern-analysis-for-warp-0">Access Pattern Analysis for Warp-0:</a></li><li class="l2"><a href="#cache-reality-vs-reuse-potential">Cache Reality vs. Reuse Potential:</a></li><li class="l2"><a href="#naive-gemm-code-walkthrough">Naive GEMM Code Walkthrough</a></li><li class="l1"><a href="#tile-gemm">TILE GEMM</a></li><li class="l2"><a href="#recap-naive-gemm-limitations">Recap: Naive GEMM Limitations</a></li><li class="l2"><a href="#moving-forward-shared-memory-as-the-solution">Moving Forward: Shared Memory as the Solution</a></li><li class="l2"><a href="#cuda-programming-constraints-ampere-architecture">CUDA Programming Constraints - Ampere Architecture</a></li><li class="l2"><a href="#tiling-strategy-options-for-256256-matrices">Tiling Strategy Options for 256×256 Matrices</a></li><li class="l2"><a href="#tiling-strategy-options">Tiling Strategy Options</a></li><li class="l2"><a href="#tile-size">Tile Size</a></li><li class="l2"><a href="#tiling-step-by-step">Tiling Step by Step</a></li><li class="l2"><a href="#visualizations-tile-gemm">Visualizations (TILE GEMM)</a></li><li class="l2"><a href="#visualizations-thread-block-of-tile">Visualizations (Thread Block of TILE)</a></li><li class="l2"><a href="#tile-gemm-code">TILE GEMM Code</a></li><li class="l2"><a href="#tile-gemm-code-walkthrough">TILE GEMM - Code Walkthrough</a></li><li class="l1"><a href="#data-reuse-analysis-naive-gemm-vs-tile-gemm">Data Reuse Analysis: Naive GEMM vs Tile GEMM</a></li><li class="l2"><a href="#understanding-the-naive-gemm-configuration">Understanding the Naive GEMM Configuration</a></li><li class="l2"><a href="#data-reuse-analysis">Data Reuse Analysis</a></li><li class="l2"><a href="#naive-gemm-cache-eviction-problems">Naive GEMM - Cache Eviction Problems</a></li><li class="l2"><a href="#tiled-gemm-solution">Tiled GEMM Solution:</a></li><li class="l1"><a href="#performance-analysis">Performance Analysis</a></li><li class="l2"><a href="#a100-specifications">A100 Specifications</a></li><li class="l2"><a href="#peak-flops-calculation">Peak FLOPS Calculation</a></li><li class="l2"><a href="#peak-memory-bandwidth-calculation">Peak Memory Bandwidth Calculation</a></li><li class="l2"><a href="#peak-arithmetic-intensity">Peak Arithmetic Intensity</a></li><li class="l2"><a href="#arithemetic-intensity">Arithemetic Intensity :</a></li><li class="l1"><a href="#warp-and-register-tiling">Warp and Register Tiling</a></li><li class="l2"><a href="#warp-tiling-cooperative-thread-organization">Warp Tiling: Cooperative Thread Organization</a></li><li class="l2"><a href="#inner-product-vs-outer-product">Inner Product vs Outer Product</a></li><li class="l2"><a href="#warp-shuffling-process">Warp Shuffling Process:</a></li><li class="l2"><a href="#visualizations-warp-shuffling">Visualizations - Warp Shuffling</a></li><li class="l2"><a href="#register-tiling">Register Tiling</a></li><li class="l1"><a href="#gemm-implementation-challenges-why-cutlass-and-cublas-matter">GEMM Implementation Challenges: Why CUTLASS and cuBLAS Matter</a></li><li class="l1"><a href="#profiling-pytorch">Profiling Pytorch</a></li><li class="l1"><a href="#optimizations-beyond-tiling">Optimizations Beyond Tiling</a></li><li class="l1"><a href="#summary">Summary</a></li><li class="l1"><a href="#references">References</a></li></ul></details>
+  <div class="content">
+<p>In our <a href="https://vvnasantosh.hashnode.dev/optimizing-gemm-gpu-architecture-essentials">previous</a> blog, we explored GPU computing fundamentals: memory hierarchies, thread organization, warps, memory coalescing, and kernel classification (memory-bound vs. compute-bound).</p>
+<p>In this blog, we apply these concepts to optimize GEMM (General Matrix Multiply) operations. We'll implement progressively faster versions,understanding each optimization technique.</p>
+<div data-node-type="callout">
+<div data-node-type="callout-emoji">💡</div>
+<div data-node-type="callout-text"><p>All visualizations &amp; images in this post were generated using Claude to enhance understanding of GPU architecture and memory patterns.</p></div>
+</div>
+
+<h1 id="matrix-multiplication">Matrix Multiplication</h1>
+<p>Matrix multiplication, as we know it has <strong>O(N³)</strong> time complexity, which is not acceptable at the scale of modern AI. Consider this: a single attention mechanism in a tranformer architecture (large language model) involves massive matrix operations, with numerous matrix multiplications across every layer. If these core operations aren't efficient, even high-performance inference engines like <a href="https://docs.vllm.ai/en/latest/index.html">vLLM</a> ,<a href="https://docs.sglang.io/">SGLang</a> and <a href="https://docs.nvidia.com/deeplearning/triton-inference-server/user-guide/docs/index.html">NVIDIA Triton</a> cannot deliver optimal results—despite sophisticated optimizations like <strong>KV Cache</strong>, <strong>Prefill</strong>, and <strong>Speculative Decoding.</strong></p>
+<h1 id="the-computational-challenge">The Computational Challenge</h1>
+<p>Let’s examine a concrete example. Consider multiplying two matrices: A (256×256) and B (256×256), resulting in matrix C (256×256).</p>
+<p>To calculate any element C(i,j), we need to compute the dot product of row i from matrix A with column j from matrix B. For C(0,0), we multiply the first row of A with the first column of B and sum the results:</p>
+<p>$$C[i][j] = \sum_{k}A[i][k] * B[k][j]$$</p>
+<pre><code class="language-markdown">C(0,0) = A(0,0)*B(0,0) + A(0,1)*B(1,0) + ... + A(0,255)*B(255,0 )
+</code></pre>
+<p>This requires 256 multiply-add operations. Since our result matrix has 256×256 = 65,536 elements, and each requires 256 operations, we need a total of 16,777,216 FMA (Fused Multiply-Add) operations.</p>
+<h1 id="the-naive-sequential-approach-cpu">The Naive Sequential Approach (CPU)</h1>
+<p>The most straightforward implementation uses three nested loops: This sequential approach calculates elements one by one: <strong>C(0,0) → C(0,1) → … → C(255,255)</strong>. On a modern CPU, this might take several seconds, which is unacceptable for real-time inference.</p>
+<figure class="fig"><img alt="naive_matrix_multiplication" src="../images/cuda/gemm_2/python-notebook-code.png" loading="lazy" decoding="async" class="zoom"></figure>
+<h1 id="the-parallelization-opportunity">The Parallelization Opportunity</h1>
+<p>Knowing how matrix multiplication works, we are certain that each element of the result matrix C can be calculated independently. Computing C(255,255) doesn't depend on any previous calculations of matrix C. This independence is the foundation for parallelization.</p>
+<p>Theoretically, we could spawn 65,536 threads—one for each result element. Thread-0 calculates C(0,0), Thread-1 calculates C(0,1), and so on. If we could execute all threads simultaneously, our computation time would be determined by the maximum time to perform 256 FMA operations rather than 8+ million—a theoretical <strong>32,768× speedup</strong>.</p>
+<p>However, as we learned in Part 1 about GPU architecture, there are practical limitations on the number of execution units and memory resources (shared memory, registers, etc.). These constraints shape how we design our GEMM kernels and lead us towards optimization strategies that balance parallelism with resource utilization.</p>
+<div data-node-type="callout">
+<div data-node-type="callout-emoji">💡</div>
+<div data-node-type="callout-text"><p><strong>Analogy: A manufacturing plant producing cars requires skilled technicians to assemble parts. Technicians need parts and tools to assemble them into a single unit (a car)</strong>.</p></div>
+</div>
+
+<h1 id="naive-cuda-kernel">Naive CUDA Kernel</h1>
+<h2 id="configurations-for-kernel-launch">Configurations for Kernel Launch</h2>
+<p>Grid and dimensional block configurations can be set using different combinations. The general convention for grid configuration is as follows. For this example, we are considering the configuration blockDim(32,32):</p>
+<pre><code class="language-markdown">gridDim((N+blockDim.x-1)/blockDim.x, (N+blockDim.y-1)/blockDim.y))
+</code></pre>
+<h2 id="kernel-gpu-configurations"><strong>Kernel &amp; GPU Configurations:</strong></h2>
+<ul>
+<li><strong>GPU: A100</strong></li>
+<li><strong>Max Streaming Multiprocessors (SM)</strong>: <strong>108</strong></li>
+<li><strong>Max Warps per SM →</strong>  <strong>64</strong></li>
+<li><strong>Max Threads per Thread Block →</strong>  <strong>1024</strong></li>
+<li><strong>Max Thread per SM → 2048</strong></li>
+<li><strong>blockDim:</strong>  <strong>(32,32) → (x,y)</strong></li>
+<li><strong>gridDim:</strong> <strong>(9,9) → (N+blockDim.x-1)/blockDim.x, (N+blockDim.y-1)/blockDim.y</strong></li>
+<li><strong>L1 Cache →</strong> <strong>32 KB (Considering that total memory Sharable between L1 Cache (Hardware Cache)+ Shared Memory(Software Cache) is 192 KB)</strong></li>
+</ul>
+<h1 id="naive-gemm">Naive GEMM</h1>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/uploads/covers/68bfed7b9811a8682daede37/80966fae-5317-44d3-b86c-e279f575fdac.svg" loading="lazy" decoding="async" class="zoom"></figure>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/uploads/covers/68bfed7b9811a8682daede37/b22fcca4-6078-4ac1-bd5f-02880f19b896.svg" loading="lazy" decoding="async" class="zoom"></figure>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/uploads/covers/68bfed7b9811a8682daede37/a43e0e5b-8ceb-411a-a084-f1bdec577304.svg" loading="lazy" decoding="async" class="zoom"></figure>
+<h2 id="memory-access-patterns-and-coalescing-analysis">Memory Access Patterns and Coalescing Analysis:</h2>
+<p>When executing the line below, data must be loaded from matrices A and B following the A100’s memory hierarchy:</p>
+<p><strong>acc += A[row*<em>K + k]</em> B[k * N + col]</strong></p>
+<p>The system searches through each level sequentially:</p>
+<ol>
+<li>Shared Memory (up to 164KB per SM, shared across all threads in a thread block)</li>
+<li>L1 Cache (28KB per SM when shared memory is maximized, shared across thread blocks)</li>
+<li>L2 Cache (40MB shared across all 108 SMs)</li>
+<li>HBM2 (slowest memory, 1.6TB/s bandwidth)</li>
+</ol>
+<ul>
+<li><strong>Memory Transaction Fundamentals:</strong> When loading data (e.g., A[row*K+k]), the memory subsystem doesn’t load just 4 bytes. Instead, it loads 128 bytes from consecutive memory locations in a single transaction. For optimal performance, threads in a warp should access consecutive memory locations. This is where memory coalescing becomes crucial—proper coalescing allows multiple threads to utilize a single 128-byte transaction, avoiding additional round trips to global memory.</li>
+</ul>
+<h2 id="access-pattern-analysis-for-warp-0">Access Pattern Analysis for Warp-0:</h2>
+<ul>
+<li>Matrix A Access: The first warp, iterating through the K dimension across all iterations, accesses elements A[0] through A[255], totaling 256 elements × 4 bytes = 1KB of data. During each iteration, all threads in the warp access the same element of Matrix A, resulting in a broadcast pattern where one value is distributed to all 32 threads.</li>
+<li>Matrix B Access: All 32 threads access consecutive elements B[0] through B[31] during the first iteration. Across 256 iterations along the K dimension, this represents 256 × 32 elements × 4 bytes = 32KB of data. Since each thread in the warp accesses consecutive memory locations, this achieves proper memory coalescing.</li>
+</ul>
+<h2 id="cache-reality-vs-reuse-potential">Cache Reality vs. Reuse Potential:</h2>
+<p>Although we are able to achieve coalescing memory access for Matrix B, we still have constraints on GPU resources limiting our potential to achieve optimal performance for GEMM.</p>
+<p>In A100 GPU Architecture, total memory available for Shared Memory + L1 Cache is 192KB, with a maximum of 164KB allocatable to shared memory, leaving 28KB for L1 cache.</p>
+<p>From our calculations for Warp-0, we know that this warp alone requires 33KB of data (1KB for Matrix A + 32KB for Matrix B). Since a thread block contains 32 warps, and multiple thread blocks may be scheduled on the same SM (sharing L1 cache), cache pressure becomes significant. This leads to frequent cache evictions, forcing us towards inefficient memory transactions to global memory.</p>
+<p><strong>Data Reuse Opportunities and Cache Limitations:</strong></p>
+<ul>
+<li>Each element A[i,k] should theoretically be reused across multiple output calculations. For example, A[0][k] values are needed by all warps calculating row 0 outputs across different columns.</li>
+<li>Each element B[k,j] should be reused across multiple row calculations. For instance, B[k][0] is needed by multiple thread blocks calculating different rows of the same column.</li>
+</ul>
+<p><strong>Cache Reality:</strong> With only 28KB L1 cache available and 33KB+ data requirements per warp, most data gets evicted before it can be reused. When Warp-1 needs the same A[0][k] elements that Warp-0 just used, these elements are likely already evicted from cache, forcing expensive global memory accesses.</p>
+<p><strong>Code:</strong></p>
+<pre><code class="language-c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;             
+#include &lt;time.h&gt;
+#include &lt;cuda_runtime.h&gt;
+
+__global__ void gemm_kernel(float* A, float* B, float* C, int M, int N, int K) {
+
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row &lt; M &amp;&amp; col &lt; N) {
+        float sum = 0.0f;
+        for (int k = 0; k &lt; K; k++) {
+            sum += A[row * K + k] * B[k * N + col];
+        }
+        C[row * N + col] = sum;
+    }
+}
+
+void generateRandomMatrix(float* matrix, int rows, int cols, float min, float max) {
+    for (int i = 0; i &lt; rows * cols; i++) {
+        float range = max - min;
+        matrix[i] = ((float)rand() / RAND_MAX) * range + min;
+    }
+}
+
+int main() {
+    int M = 256, N = 256, K = 256;
+    size_t size_A = M * K * sizeof(float);
+    size_t size_B = K * N * sizeof(float);
+    size_t size_C = M * N * sizeof(float);
+
+    printf(&quot;Matrix dimensions: A(%dx%d) * B(%dx%d) = C(%dx%d)\n&quot;, M, K, K, N, M, N);
+
+    // Host matrices
+    float *h_A = (float*)malloc(size_A);
+    float *h_B = (float*)malloc(size_B);
+
+    // Device matrices
+    float *d_A, *d_B, *d_C;
+    cudaMalloc(&amp;d_A, size_A);
+    cudaMalloc(&amp;d_B, size_B);
+    cudaMalloc(&amp;d_C, size_C);
+
+    // Generate random matrices
+    printf(&quot;Generating random matrices...\n&quot;);
+    srand(time(NULL));
+    generateRandomMatrix(h_A, M, K, 1.0f, 10.0f);
+    generateRandomMatrix(h_B, K, N, 1.0f, 10.0f);
+
+    // Copy to device
+    printf(&quot;Copying matrices to GPU...\n&quot;);
+    cudaMemcpy(d_A, h_A, size_A, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, size_B, cudaMemcpyHostToDevice);
+
+    // Setup kernel launch parameters
+    dim3 block(32, 32);
+    dim3 grid((N + block.x - 1) / block.x, (M + block.y - 1) / block.y);
+
+    // Create timing events
+    cudaEvent_t start, stop;
+    cudaEventCreate(&amp;start);
+    cudaEventCreate(&amp;stop);
+
+    gemm_kernel&lt;&lt;&gt;&gt;(d_A, d_B, d_C, M, N, K);
+    cudaDeviceSynchronize();
+
+    // Calculate Time Taken
+    printf(&quot;Running GEMM kernel...\n&quot;);
+    cudaEventRecord(start);
+    gemm_kernel&lt;&lt;&gt;&gt;(d_A, d_B, d_C, M, N, K);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+
+    float milliseconds = 0;
+    cudaEventElapsedTime(&amp;milliseconds, start, stop);
+
+    // Calculate performance
+    long long ops = 2LL * M * N * K;
+    double gflops = (ops / (milliseconds / 1000.0f)) / 1e9;
+
+    printf(&quot;\n=== GEMM Performance Results ===\n&quot;);
+    printf(&quot;Kernel execution time: %.3f ms\n&quot;, milliseconds);
+    printf(&quot;Operations: %lld\n&quot;, ops);
+    printf(&quot;Performance: %.2f GFLOPS\n&quot;, gflops);
+
+    // Cleanup
+    free(h_A); free(h_B);
+    cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
+    return 0;
+}
+</code></pre>
+<h2 id="naive-gemm-code-walkthrough">Naive GEMM Code Walkthrough</h2>
+<p>CUDA Progamming comprises of below steps on High level</p>
+<pre><code class="language-markdown">
+    | Step | Action                          | Code/Function                                         | Notes                                                 |
+    |------|---------------------------------|------------------------------------------------------ |-------------------------------------------------------|
+    | 1    | Declare Variables on Host(CPU)  | `int *h_A = (int *)malloc(size);`                     | standard C/C++ memory allocation                      |
+    | 2    | Declare Device Variables        | `int *d_A;`                                           | Only declare pointers here                            |
+    | 3    | Allocate Device Memory          | `cudaMalloc((void**)&amp;d_A, size);`                     | Allocates memory on GPU                               |
+    | 4    | Copy Host → Device              | `cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice);` | Copy input data from CPU to GPU                       | 
+    | 5    | Launch Kernel                   | `Kernel&lt;&lt;&lt;gridDim, blockDim&gt;&gt;&gt;(...);`                 | Configure grid/block dimensions                       |
+    |      |                                 | `cudaDeviceSynchronize();`                            | Wait until kernel execution completes                 |
+    | 6    | Copy Device → Host              | `cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost);` | Copy kernel execution result from GPU to CPU          |              
+    | 7    | Free Memory                     | `cudaFree(d_A); free(h_A);`                           | Clean memory block allocated, to avoid memory leaks   |
+</code></pre>
+<ul>
+<li><strong>main()</strong> method : Allocates Memory, Transfers data from CPU to GPU, Launch Kernel with Gird &amp; Thread Block configuration</li>
+<li><strong>generateRandomMatrix()</strong> method : Generates Random matrices for input data</li>
+<li><strong>gemm_kernel</strong> method(): Core Kernel Logic</li>
+</ul>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/uploads/covers/68bfed7b9811a8682daede37/9aa24287-4632-4420-83d6-86cc44b3020a.svg" loading="lazy" decoding="async" class="zoom"></figure>
+<h1 id="tile-gemm">TILE GEMM</h1>
+<h2 id="recap-naive-gemm-limitations">Recap: Naive GEMM Limitations</h2>
+<p>When discussing naive GEMM implementation in our earlier section, we found that even with optimal memory access patterns—broadcast reads for Matrix A and coalesced reads for Matrix B—the performance was significantly constrained, reaching only about 2% of the theoretical peak memory bandwidth.</p>
+<p>The primary issue was inadequate data reuse due to cache capacity limitations. Although our (32,32) block configuration facilitated efficient warp-level memory patterns, frequent cache evictions led to repeated global memory accesses for the same data elements. This resulted in a memory-bound kernel that was unable to fully leverage the GPU’s computational resources.</p>
+<h2 id="moving-forward-shared-memory-as-the-solution">Moving Forward: Shared Memory as the Solution</h2>
+<p>To overcome these limitations of naive GEMM, we need explicit control over data locality and reuse. The L1 cache, being a hardware-managed cache controlled by the execution framework, provides no guarantee that data brought into cache will remain available for subsequent transactions.</p>
+<p>Shared memory, managed by the programmer and often called a “software cache,” provides a solution by allowing programmers to control data movement explicitly. Once data is loaded into shared memory, it is guaranteed to remain available until either overwritten by the program or the kernel execution completes.</p>
+<p>However, it is not possible to bring all matrix data into shared memory simultaneously. To understand why, let us examine the key limitations that prevent this approach</p>
+<h2 id="cuda-programming-constraints-ampere-architecture">CUDA Programming Constraints - Ampere Architecture</h2>
+<p>Understanding memory and thread limitations when developing CUDA applications for matrix operations.</p>
+<aside>
+  <div>
+    Shared Memory Constraints
+  </div>
+  <div>
+    <h3>Memory Allocation Limits</h3>
+    <p>
+      Shared memory is configurable, with a maximum allocation of 
+      <b>164 KB per thread block</b> 
+      (from the total 192 KB block)
+    </p>
+  </div>
+  <div>
+    <h3>Example Matrix Memory Requirements</h3>
+    <p>Our example matrix A (256x256) requires:</p>
+    <div>
+      <code>256 × 256 × 4 bytes = 256 KB of memory</code>
+    </div>
+  </div>
+ <br />
+  <div>
+    <h3>Access Restrictions</h3>
+    <p>
+      Data in shared memory is accessible only to threads within the same thread block
+    </p>
+  </div>
+  </aside>
+
+<blockquote>
+<p>The matrix requires 256 KB but only 164 KB is available per block, creating a significant constraint for large matrix operations.</p>
+</blockquote>
+<p>The matrix requires 256 KB but only 164 KB is available per block, creating a significant constraint for large matrix operations.</p>
+<aside>
+  <div>
+    Thread Block Limitations
+  </div>
+  <div>
+    <h3>Total Threads Required</h3>
+    <p>
+      To calculate the complete output matrix C (256×256 = 
+      <b>65,536 elements</b>), 
+      we would need 65,536 threads
+    </p>
+  </div>
+  <div>
+    <h3>Ampere Architecture Limits</h3>
+    <p>
+      Maximum threads per thread block in Ampere architecture: 
+      <b>1,024 threads</b>
+    </p>
+  </div>
+  <div>
+    <h3>Thread Capacity Analysis</h3>
+    <p>
+      This represents only approximately <b>1.6%</b> of the required threads:
+    </p>
+    <div>
+      <code>1,024 ÷ 65,536 = 0.0156 (1.56%)</code>
+    </div>
+  </div>
+</aside>
+
+<blockquote>
+<p>The huge gap between required threads (65,536) and available threads per block (1,024) necessitates careful work distribution across multiple thread blocks.</p>
+</blockquote>
+<h2 id="tiling-strategy-options-for-256256-matrices">Tiling Strategy Options for 256×256 Matrices</h2>
+<p>These constraints reveal that while matrix A cannot fit entirely into one thread block’s shared memory, it can be split into smaller sub-matrices (tiles) that do fit. This approach forms the foundation of Tile GEMM, where matrices are divided into manageable tiles that individual thread blocks can process effectively using shared memory. The tiling strategy is designed from the output matrix’s (<strong>C</strong>) perspective.</p>
+<h2 id="tiling-strategy-options">Tiling Strategy Options</h2>
+<p>Several tiling strategies can be used to partition the 256×256 matrices into smaller sub-matrices. The tile size significantly impacts both memory usage and thread utilization, so it must be chosen carefully to achieve optimal performance. However, we can't use all tile sizes due to GPU constraints. For example, a <strong>64×64</strong> tile requires <strong>4,096 threads per block</strong>, but the maximum threads per block is <strong>1,024</strong>. This constraints eliminates larger tile sizes such as <strong>128×128</strong> and <strong>64×64</strong>, for our example we'll use a <strong>32×32 tile size.</strong></p>
+<h2 id="tile-size">Tile Size</h2>
+<p>Matrix Size: 256 × 256 = 65,536 elements For tile size T×T: Number of tiles = (256/T)²</p>
+<ul>
+<li>128×128 tiles: (256/128)² = 2² = 4 tiles</li>
+<li>64×64 tiles: (256/64)² = 4² = 16 tiles</li>
+<li>32×32 tiles: (256/32)² = 8² = 64 tiles</li>
+<li>16×16 tiles: (256/16)² = 16² = 256 tiles</li>
+<li>8×8 tiles: (256/8)² = 32² = 1,024 tiles</li>
+<li>4×4 tiles: (256/4)² = 64² = 4096 tiles</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th><strong>Tile Size</strong></th>
+<th><strong>Elements per Tile</strong></th>
+<th><strong>Memory/Tile</strong></th>
+<th><strong>Threads Required</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>128 × 128</td>
+<td>16384 (128 × 128)</td>
+<td>64 KB</td>
+<td>16384</td>
+</tr>
+<tr>
+<td>64 × 64</td>
+<td>4096 ( 64 × 64)</td>
+<td>16 KB</td>
+<td>4096</td>
+</tr>
+<tr>
+<td>32 × 32</td>
+<td>1024 (32 × 32)</td>
+<td>4 KB</td>
+<td>1024</td>
+</tr>
+<tr>
+<td>16 × 16</td>
+<td>256 (16 × 16)</td>
+<td>1 KB</td>
+<td>256</td>
+</tr>
+<tr>
+<td>8 × 8</td>
+<td>64 (8 × 8)</td>
+<td>256 B</td>
+<td>64</td>
+</tr>
+<tr>
+<td>4 × 4</td>
+<td>16 (4 × 4)</td>
+<td>64 B</td>
+<td>16</td>
+</tr>
+</tbody>
+</table>
+<h2 id="tiling-step-by-step">Tiling Step by Step</h2>
+<blockquote>
+<p>For our example of <strong>256×256 matrix</strong>, we are splitting the large matrix into tiles (sub-matrices) of size <strong>32×32</strong>, this leads to the following configuration:</p>
+</blockquote>
+<ol>
+<li><strong>Total tiles</strong></li>
+</ol>
+<p><code>64 tiles (8×8 grid), with each tile calculated by one thread block</code>
+2. <strong>Tile size</strong></p>
+<p><code>Each thread block computes one 32×32 tile, totaling 1,024 elements</code>
+3. <strong>Thread allocation</strong></p>
+<p><code>Each thread block uses 1,024 threads (one thread per tile element)</code>
+4. <strong>Warp organization</strong></p>
+<p><code>Each thread block contains 32 warps 1,024 ÷ 32 = 32 warps</code>
+5. <strong>Memory footprint</strong></p>
+<p><code>Each thread block loads 32×32 elements = 4 KB per matrix (float32 precision)</code>
+6. <strong>Dependencies</strong></p>
+<p><code>To calculate one tile C(0,0), it requires 8 tiles from matrix A (row 0) and 8 tiles from matrix B (column 0)</code>
+7. <strong>Loading strategy</strong></p>
+<p><code>Tiles from A and B are cooperatively loaded by warps into the thread block's shared memory</code>
+8. <strong>Sequential processing</strong></p>
+<p><code>Tiles of A and B are loaded in 8 sequential phases as described below</code></p>
+<div data-node-type="callout">
+<div data-node-type="callout-emoji">💡</div>
+<div data-node-type="callout-text"><p>The tiling approach enables efficient use of shared memory by loading small, manageable chunks of data that fit within memory constraints while maximizing thread utilization and computational efficiency.</p></div>
+</div>
+
+<p>We’ll examine how Thread Block (0,0) processes these tiles through the 8 sequential phases to compute C(0,0) using shared memory optimization.</p>
+<p><strong>Full Grid</strong> : Below visualizations represents the 64 tiles A &amp; B of collective output of all 64 thread blocks C(0,0) to C(7,7) yields the final 256×256 matrix containing 65,536 elements.</p>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/uploads/covers/68bfed7b9811a8682daede37/6f63bcaf-86d4-4920-b95b-743d79791430.svg" loading="lazy" decoding="async" class="zoom"></figure>
+<h2 id="visualizations-tile-gemm">Visualizations (TILE GEMM)</h2>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/uploads/covers/68bfed7b9811a8682daede37/6bd8b6ee-30d8-4e61-b30e-4579902ff786.svg" loading="lazy" decoding="async" class="zoom"></figure>
+<p><strong>Thread Block Layout(Tiles)</strong></p>
+<p>The interactive visualizations above illustrate how matrices are divided into tiles for efficient CUDA processing. Now let's zoom into a single tile to understand how it's computed by a thread block.</p>
+<p>Our original configuration used a <strong>256 × 256</strong> matrix divided into <strong>64 tiles</strong> of size <strong>32 × 32</strong>, with each tile processed by a <strong>32 × 32 thread block</strong>. However, visualizing a 32×32 thread block (1,024 threads) would be too cluttered for clear understanding.</p>
+<p>To better demonstrate the thread block computation pattern, we'll use an adjusted configuration that maintains the same computational principles while being more visually manageable:</p>
+<p><strong>Adjusted Configuration:</strong></p>
+<ul>
+<li><strong>Matrix Size:</strong> <strong>64 × 64</strong></li>
+<li><strong>Tile Size:</strong> <strong>8 × 8</strong></li>
+<li><strong>Number of Tiles:</strong> <strong>64</strong></li>
+<li><strong>Grid Size:</strong> <strong>8 × 8</strong></li>
+<li><strong>Thread Block Dimensions:</strong> <strong>8 × 8</strong></li>
+</ul>
+<h2 id="visualizations-thread-block-of-tile">Visualizations (Thread Block of TILE)</h2>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/uploads/covers/68bfed7b9811a8682daede37/426eee6a-b661-422b-a288-a02296be2f6e.svg" loading="lazy" decoding="async" class="zoom"></figure>
+<h2 id="tile-gemm-code">TILE GEMM Code</h2>
+<pre><code class="language-c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+#include &lt;cuda_runtime.h&gt;
+
+#define TILE_SIZE 32
+
+
+__global__ void tiled_gemm_kernel(float* A, float* B, float* C, int M, int N, int K) {
+    // Shared memory for tiles
+    __shared__ float A_tile[TILE_SIZE][TILE_SIZE];
+    __shared__ float B_tile[TILE_SIZE][TILE_SIZE];
+
+    // Thread indices
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+
+    // Global indices for the output matrix C
+    int row = blockIdx.y * TILE_SIZE + ty;
+    int col = blockIdx.x * TILE_SIZE + tx;
+
+    float sum = 0.0f;
+
+    // Loop over tiles
+    for (int tile = 0; tile &lt; (K + TILE_SIZE - 1) / TILE_SIZE; tile++) {
+        // Load tile from matrix A into shared memory
+        int A_row = row;
+        int A_col = tile * TILE_SIZE + tx;
+        if (A_row &lt; M &amp;&amp; A_col &lt; K) {
+            A_tile[ty][tx] = A[A_row * K + A_col];
+        } else {
+            A_tile[ty][tx] = 0.0f;
+        }
+
+        // Load tile from matrix B into shared memory
+        int B_row = tile * TILE_SIZE + ty;
+        int B_col = col;
+        if (B_row &lt; K &amp;&amp; B_col &lt; N) {
+            B_tile[ty][tx] = B[B_row * N + B_col];
+        } else {
+            B_tile[ty][tx] = 0.0f;
+        }
+
+        // Synchronize to ensure all threads have loaded their data
+        __syncthreads();
+
+        // Compute partial dot product for this tile
+        for (int k = 0; k &lt; TILE_SIZE; k++) {
+            sum += A_tile[ty][k] * B_tile[k][tx];
+        }
+
+        // Synchronize before loading next tile
+        __syncthreads();
+    }
+
+    // Write result to global memory
+    if (row &lt; M &amp;&amp; col &lt; N) {
+        C[row * N + col] = sum;
+    }
+}
+
+// Simple GEMM kernel for comparison
+__global__ void simple_gemm_kernel(float* A, float* B, float* C, int M, int N, int K) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row &lt; M &amp;&amp; col &lt; N) {
+        float sum = 0.0f;
+        for (int k = 0; k &lt; K; k++) {
+            sum += A[row * K + k] * B[k * N + col];
+        }
+        C[row * N + col] = sum;
+    }
+}
+
+void generateRandomMatrix(float* matrix, int rows, int cols, float min, float max) {
+    for (int i = 0; i &lt; rows * cols; i++) {
+        float range = max - min;
+        matrix[i] = ((float)rand() / RAND_MAX) * range + min;
+    }
+}
+
+void printMatrix(float* matrix, int rows, int cols, const char* name) {
+    printf(&quot;\n%s (%dx%d):\n&quot;, name, rows, cols);
+    for (int i = 0; i &lt; rows &amp;&amp; i &lt; 8; i++) {
+        for (int j = 0; j &lt; cols &amp;&amp; j &lt; 8; j++) {
+            printf(&quot;%.2f &quot;, matrix[i * cols + j]);
+        }
+        if (cols &gt; 8) printf(&quot;...&quot;);
+        printf(&quot;\n&quot;);
+    }
+    if (rows &gt; 8) printf(&quot;...\n&quot;);
+}
+
+bool verifyResults(float* C1, float* C2, int M, int N, float tolerance = 1e-3f) {
+    for (int i = 0; i &lt; M * N; i++) {
+        if (fabs(C1[i] - C2[i]) &gt; tolerance) {
+            printf(&quot;Mismatch at index %d: %.6f vs %.6f\n&quot;, i, C1[i], C2[i]);
+            return false;
+        }
+    }
+    return true;
+}
+
+int main() {
+    // Matrix dimensions - should be multiples of TILE_SIZE for best performance
+    int M = 256, N = 256, K = 256;
+
+    size_t size_A = M * K * sizeof(float);
+    size_t size_B = K * N * sizeof(float);
+    size_t size_C = M * N * sizeof(float);
+
+    printf(&quot;=== Tiled GEMM with %dx%d Tiles ===\n&quot;, TILE_SIZE, TILE_SIZE);
+    printf(&quot;Matrix dimensions: A(%dx%d) * B(%dx%d) = C(%dx%d)\n&quot;, M, K, K, N, M, N);
+    printf(&quot;Memory usage: A=%.1fMB, B=%.1fMB, C=%.1fMB\n&quot;, 
+           size_A/1e6, size_B/1e6, size_C/1e6);
+
+    // Host matrices
+    float *h_A = (float*)malloc(size_A);
+    float *h_B = (float*)malloc(size_B);
+    float *h_C_tiled = (float*)malloc(size_C);
+    float *h_C_simple = (float*)malloc(size_C);
+
+    // Device matrices
+    float *d_A, *d_B, *d_C;
+    cudaMalloc(&amp;d_A, size_A);
+    cudaMalloc(&amp;d_B, size_B);
+    cudaMalloc(&amp;d_C, size_C);
+
+    // Generate random matrices
+    printf(&quot;\nGenerating random matrices...\n&quot;);
+    srand(time(NULL));
+    generateRandomMatrix(h_A, M, K, 1.0f, 10.0f);
+    generateRandomMatrix(h_B, K, N, 1.0f, 10.0f);
+
+    // Print sample of input matrices
+    printMatrix(h_A, M, K, &quot;Matrix A (sample)&quot;);
+    printMatrix(h_B, K, N, &quot;Matrix B (sample)&quot;);
+
+    // Copy to device
+    printf(&quot;\nCopying matrices to GPU...\n&quot;);
+    cudaMemcpy(d_A, h_A, size_A, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, size_B, cudaMemcpyHostToDevice);
+
+    // Create timing events
+    cudaEvent_t start, stop;
+    cudaEventCreate(&amp;start);
+    cudaEventCreate(&amp;stop);
+
+    // === TILED GEMM ===
+    printf(&quot;\n=== Running Tiled GEMM ===\n&quot;);
+
+    // Grid and block dimensions for tiled GEMM
+    dim3 block_tiled(TILE_SIZE, TILE_SIZE);
+    dim3 grid_tiled((N + TILE_SIZE - 1) / TILE_SIZE, (M + TILE_SIZE - 1) / TILE_SIZE);
+
+    printf(&quot;Tiled kernel config: Grid(%d,%d), Block(%d,%d)\n&quot;, 
+           grid_tiled.x, grid_tiled.y, block_tiled.x, block_tiled.y);
+
+
+    // Time tiled GEMM
+    cudaEventRecord(start);
+    tiled_gemm_kernel&lt;&lt;&lt;grid_tiled, block_tiled&gt;&gt;&gt;(d_A, d_B, d_C, M, N, K);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+
+    float tiled_time = 0;
+    cudaEventElapsedTime(&amp;tiled_time, start, stop);
+
+    // Copy result back
+    cudaMemcpy(h_C_tiled, d_C, size_C, cudaMemcpyDeviceToHost);
+
+    // === SIMPLE GEMM (for comparison) ===
+    printf(&quot;\n=== Running Simple GEMM for Comparison ===\n&quot;);
+
+    // Grid and block dimensions for simple GEMM
+    dim3 block_simple(32, 32);
+    dim3 grid_simple((N + block_simple.x - 1) / block_simple.x, 
+                     (M + block_simple.y - 1) / block_simple.y);
+
+    printf(&quot;Simple kernel config: Grid(%d,%d), Block(%d,%d)\n&quot;, 
+           grid_simple.x, grid_simple.y, block_simple.x, block_simple.y);
+
+
+    // Time simple GEMM
+    cudaEventRecord(start);
+    simple_gemm_kernel&lt;&lt;&lt;grid_simple, block_simple&gt;&gt;&gt;(d_A, d_B, d_C, M, N, K);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+
+    float simple_time = 0;
+    cudaEventElapsedTime(&amp;simple_time, start, stop);
+
+    // Copy result back
+    cudaMemcpy(h_C_simple, d_C, size_C, cudaMemcpyDeviceToHost);
+
+    // === RESULTS ===
+    printf(&quot;\n=== Performance Results ===\n&quot;);
+
+    long long ops = 2LL * M * N * K;
+    double tiled_gflops = (ops / (tiled_time / 1000.0f)) / 1e9;
+    double simple_gflops = (ops / (simple_time / 1000.0f)) / 1e9;
+
+    printf(&quot;Tiled GEMM:  %.3f ms, %.2f GFLOPS\n&quot;, tiled_time, tiled_gflops);
+    printf(&quot;Simple GEMM: %.3f ms, %.2f GFLOPS\n&quot;, simple_time, simple_gflops);
+    printf(&quot;Speedup: %.2fx\n&quot;, simple_time / tiled_time);
+
+    // Verify correctness
+    printf(&quot;\n=== Verification ===\n&quot;);
+    bool correct = verifyResults(h_C_tiled, h_C_simple, M, N);
+    printf(&quot;Results match: %s\n&quot;, correct ? &quot;✓ YES&quot; : &quot;✗ NO&quot;);
+
+    // Print sample of output
+    printMatrix(h_C_tiled, M, N, &quot;Result Matrix C (sample)&quot;);
+
+    // Memory bandwidth analysis
+    double mem_ops = (size_A + size_B + size_C) / (1024.0 * 1024.0 * 1024.0); // GB
+    double tiled_bandwidth = mem_ops / (tiled_time / 1000.0);
+    double simple_bandwidth = mem_ops / (simple_time / 1000.0);
+
+    printf(&quot;\n=== Memory Bandwidth ===\n&quot;);
+    printf(&quot;Data transferred: %.2f GB\n&quot;, mem_ops);
+    printf(&quot;Tiled bandwidth:  %.1f GB/s\n&quot;, tiled_bandwidth);
+    printf(&quot;Simple bandwidth: %.1f GB/s\n&quot;, simple_bandwidth);
+
+    // Cleanup
+    free(h_A); free(h_B); free(h_C_tiled); free(h_C_simple);
+    cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
+    printf(&quot;\n=== Program Complete ===\n&quot;);
+    return 0;
+}
+</code></pre>
+<h2 id="tile-gemm-code-walkthrough">TILE GEMM - Code Walkthrough</h2>
+<p>Like mentioned earlier the CUDA Program Follows steps mentioned below ,</p>
+<pre><code class="language-markdown">
+    | Step | Action                          | Code/Function Used                                    | Notes                                                 |
+    |------|---------------------------------|------------------------------------------------------ |-------------------------------------------------------|
+    | 1    | Declare Variables on Host(CPU)  | `int *h_A = (int *)malloc(size);`                     | standard C/C++ memory allocation                      |
+    | 2    | Declare Device Variables        | `int *d_A;`                                           | Only declare pointers here                            |
+    | 3    | Allocate Device Memory          | `cudaMalloc((void**)&amp;d_A, size);`                     | Allocates memory on GPU                               |
+    | 4    | Copy Host → Device              | `cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice);` | Copy input data from CPU to GPU                       | 
+    | 5    | Launch Kernel                   | `Kernel&lt;&lt;&lt;gridDim, blockDim&gt;&gt;&gt;(...);`                 | Configure grid/block dimensions                       |
+    |      |                                 | `cudaDeviceSynchronize();`                            | Wait until kernel execution completes                 |
+    | 6    | Copy Device → Host              | `cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost);` | Copy kernel execution result from GPU to CPU          |              
+    | 7    | Free Memory                     | `cudaFree(d_A); free(h_A);`                           | Clean memory block allocated, to avoid memory leaks   |
+</code></pre>
+<ul>
+<li><strong>main()</strong> : Allocates Memory, Transfers data from CPU to GPU, Define Gird &amp; Block configuration, Launch Kernel, Copy from GPU to CPU.</li>
+<li><strong>generateRandomMatrix()</strong> method : Generates Random matrices for input data</li>
+<li><strong>tiled_gemm_kernel()</strong>: Kernel to calculate Tiled GEMM</li>
+<li><strong>simple_gemm_kernel():</strong> Kernel to calculate Naive GEMM</li>
+<li><strong>printMatrix()</strong> &amp; <strong>verifyResults()</strong> - Utility functions</li>
+</ul>
+<blockquote>
+<p>The process of Allocating Memory on CPU for Input &amp; Output matrices, Fill the matrices with random numbers, Copy matrices to Memory allocated on GPU , Launch Kernels (Simple &amp; Tiled).</p>
+<p>Kernel Logic for Simple or Naive GEMM remains same , hence we will solely focus on Tiled GEMM Kernel</p>
+</blockquote>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/uploads/covers/68bfed7b9811a8682daede37/f7a10741-c622-4d46-9e1a-9c1c0e08da62.svg" loading="lazy" decoding="async" class="zoom"></figure>
+<h1 id="data-reuse-analysis-naive-gemm-vs-tile-gemm">Data Reuse Analysis: Naive GEMM vs Tile GEMM</h1>
+<p>Let us examine how tiling solves the data reuse inefficiencies that arise in naive GEMM cache evictions.</p>
+<p><strong>Configuration Recap:</strong></p>
+<p><strong>Naive GEMM:</strong> Grid of 1,024 thread blocks (8×8 grid), each thread block containing 1,024 threads (32×32), with no shared memory usage.</p>
+<p><strong>Tiled GEMM:</strong> Grid of 64 thread blocks (8×8 grid), each thread block containing 1,024 threads (32×32), using 32×32 tiles with shared memory for matrices A and B.</p>
+<h2 id="understanding-the-naive-gemm-configuration"><strong>Understanding the Naive GEMM Configuration</strong></h2>
+<p>In naive GEMM, our configuration comprised:</p>
+<ul>
+<li><strong>Grid:</strong> 64 thread blocks arranged in an 8×8 layout</li>
+<li><strong>Thread Block:</strong> 1,024 threads arranged in a 32×32 layout</li>
+<li><strong>Warps per Block:</strong> 32 warps (1,024 threads ÷ 32 threads per warp)</li>
+<li><strong>Work per Warp:</strong> Each warp calculates 32 consecutive elements in the output matrix</li>
+</ul>
+<p>This configuration meant that each thread block computed a 32×32 tile of the output matrix C, with threads directly reading from global memory without caching data in shared memory.</p>
+<h2 id="data-reuse-analysis">Data Reuse Analysis</h2>
+<p><strong>Naive GEMM Limitations:</strong></p>
+<p>To calculate adjacent output elements C(0,0) and C(0,1), both require the entire first row of matrix A. While this row is loaded once from global memory for C(0,0), cache evictions prevent reuse for C(0,1), forcing redundant global memory accesses.</p>
+<p>Similarly, to calculate C(0,0) and C(1,0) we need the first column of B matrix i.e B(0,0) =&gt; B(0,31).While calculating C(0,0), this entire column is fetched from global memory. However due to cache evictions, this same data cannot be reused when calculating C(1,0). Let's examine the memory access pattern in Warp-0 to understand the problem.</p>
+<h3 id="memory-access-per-thread-blocknaive"><strong>Memory Access per Thread Block(Naive)</strong></h3>
+<ul>
+<li>Load Row-0 from Matrix A: 256 × 4 bytes = 1 KB</li>
+<li>Load Columns 0-31 from Matrix B: 256 × 32 × 4 bytes = 32 KB</li>
+</ul>
+<h3 id="data-loading-from-global-memory"><strong>Data Loading from Global Memory</strong></h3>
+<ul>
+<li>Matrix A: 1 row = 256 elements × 4 bytes = 1,024 bytes</li>
+<li>Matrix B: 1 column = 256 elements × 4 bytes = 1,024 bytes</li>
+<li>Total: 2,048 bytes</li>
+</ul>
+<h3 id="operations-performed">Operations Performed:</h3>
+<p>256 multiply operations + 256 add operations = 512 FLOPs</p>
+<pre><code class="language-markdown">Arithmetic Intensity:
+512 FLOPs ÷ 2,048 bytes = 0.25 FLOPS/Byte
+</code></pre>
+<blockquote>
+<p><strong>Problem: Matrix B columns cannot be reused across computations due to cache evictions</strong></p>
+</blockquote>
+<h2 id="naive-gemm-cache-eviction-problems"><strong>Naive GEMM - Cache Eviction Problems</strong></h2>
+<ul>
+<li>Step 1 - Load A[0] row = 1 KB → L1 Cache</li>
+<li>Step 2 - Load B[0:31] columns =32 KB ( 1 Column = 256 × 4 Bytes = 1KB =&gt; 32 Columns = 32 × 1 KB) → L1 Cache</li>
+<li>Step 3 - Compute C[0,0] to C[0,31]</li>
+<li>Cache Eviction , L1 Cache (32 KB)</li>
+<li>Relod B[0:31] for next cycle of computation i.e C[1,0] to C[0,31]</li>
+<li>The process of evictions &amp; Reload continues for all 255 iterations</li>
+</ul>
+<h2 id="tiled-gemm-solution">Tiled GEMM Solution:</h2>
+<h3 id="data-loading-from-global-memory_1">Data Loading from Global Memory:</h3>
+<ul>
+<li>Load 32×32 tile from Matrix A into shared memory: 32 × 32 × 4 bytes * 8 Tiles = 32 KB</li>
+<li>Load 32×32 tile from Matrix B into shared memory: 32 × 32 × 4 bytes * 8 Tiles = 32 KB</li>
+<li>Total: 64 KB = 65,536 bytes</li>
+</ul>
+<h3 id="operations-performed_1">Operations Performed:</h3>
+<p>32×32 threads × 512 operations each = 524,288 FLOPs</p>
+<pre><code class="language-markdown">Arithmetic Intensity:
+524,288FLOPs ÷ 65,536 bytes = 8.0 FLOPS/Byte
+</code></pre>
+<blockquote>
+<p>The improvement comes from data reuse within shared memory. In tiled GEMM, each byte loaded from global memory is reused multiple times across different computations, while in naive GEMM, each byte is used only once before being potentially evicted from cache.</p>
+</blockquote>
+<h1 id="performance-analysis">Performance Analysis</h1>
+<p>To understand a kernel's performance and limitations, we compare it against the <strong>roofline model</strong>. The roofline model is a visual performance model that helps determine whether a kernel is limited by memory bandwidth or computational throughput, to determine this the model plots: <strong>Performance (FLOPS)</strong> on the Y-axis - the computational throughput achieved, <strong>Arithmetic Intensity (FLOPS/Byte)</strong> on the X-axis - the ratio of compute operations to memory traffic</p>
+<figure class="fig"><img alt="Roofline intro" src="https://docs.nersc.gov/tools/performance/roofline/Roofline-intro.png" loading="lazy" decoding="async" class="zoom"></figure>
+<p>Ref: <a href="https://docs.nersc.gov/tools/performance/roofline/">https://docs.nersc.gov/tools/performance/roofline/</a></p>
+<p>The roofline has two regions :<strong>Memory-Bound Region</strong> (low arithmetic intensity): When a kernel performs relatively few operations per byte transferred, performance is limited by memory bandwidth. The kernel spends most of its time waiting for data rather than computing. introducing below optimizations could help kernel achieve more operations per byte transferred</p>
+<ul>
+<li>Reducing redundant memory accesses</li>
+<li>Improving data reuse (caching)</li>
+<li>Coalescing memory transactions</li>
+</ul>
+<p>When a kernel performs many operations per byte transferred, performance is limited by computational throughput (peak FLOPS) , such model belongs to <strong>Compute Bound Region</strong> Optimizations mentioned. below\
+could help achieve peak compute capacity</p>
+<ul>
+<li>Using tensor cores or specialized hardware</li>
+<li>Instruction-level parallelism</li>
+</ul>
+<p><strong>Arithmetic Intensity</strong> is the key metric: it measures how many floating-point operations are performed per byte of data transferred between memory and the processor.</p>
+<h2 id="a100-specifications">A100 Specifications</h2>
+<ul>
+<li>CUDA Cores: 6,912 (108 SMs × 64 cores per SM)</li>
+<li>Base Clock: ~1.41 GHz</li>
+<li>Memory: 80GB HBM2e</li>
+<li>Memory Interface: 5,120-bit bus width</li>
+<li>Memory Clock: ~1.6 GHz (effective)</li>
+</ul>
+<h2 id="peak-flops-calculation">Peak FLOPS Calculation</h2>
+<ul>
+<li>Cores per SM: 64 CUDA cores</li>
+<li>Total SMs: 108 streaming multiprocessors</li>
+<li>Total CUDA cores: 108 × 64 = 6,912 cores</li>
+<li>Clock frequency: ~1.41 GHz</li>
+<li>Operations per core per clock: 1 FMA = 2 FLOPs (<strong>FP32 Precision</strong>)</li>
+<li>Peak FLOPS = Total Cores × Clock Frequency × FLOPs per Clock</li>
+<li>Peak FLOPS = 6,912 × 1.41 × 10⁹ × 2</li>
+<li>Peak FLOPS ≈ 19.5 TFLOPS</li>
+</ul>
+<h2 id="peak-memory-bandwidth-calculation">Peak Memory Bandwidth Calculation</h2>
+<p>Memory interface width: 5,120 bits = 640 bytes\
+Memory clock (effective): ~1,600 MHz (DDR, so 800 MHz × 2)\
+Peak Bandwidth = Interface Width × Memory Clock\
+Peak Bandwidth = 640 bytes × 1,600 × 10⁶ transfers/second\
+Peak Bandwidth ≈ 2,039 GB/s ≈ 2.0 TB/s</p>
+<h2 id="peak-arithmetic-intensity">Peak Arithmetic Intensity</h2>
+<p>Arithmetic Intensity = FLOPS ÷ Memory Bandwidth\
+19.5 <em>10^12 FLOPS / 2.0</em> 10^12 Bytes per sec\
+19.5/2 = 9.75 Flops/Byte</p>
+<table>
+<thead>
+<tr>
+<th><strong>Arithmetic Intensity</strong></th>
+<th><strong>Classification</strong></th>
+<th><strong>Bottleneck</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><mark>Below 9.75 FLOPS/Byte</mark></td>
+<td>Memory Bound Kernel</td>
+<td>Memory</td>
+</tr>
+<tr>
+<td><mark>Above 9.75 FLOPS/Byte</mark></td>
+<td>Compute Bound Kernel</td>
+<td>Compute</td>
+</tr>
+</tbody>
+</table>
+<h2 id="arithemetic-intensity">Arithemetic Intensity :</h2>
+<p>To calculate each cell in the output matrix we need to fetch 256 elements from A &amp; 256 Elements from B , and perform 256 Multiply and 256 Additions</p>
+<p><strong>Naive GEMM</strong></p>
+<pre><code class="language-markdown">C(0,0) = A(0,0) * B(0,0) + A(0,1) * B(1,0) + A(0,2) * B(2,0) + ... + A(0,256) * B(256,0)
+
+FLOPS = 256 Multiply  + 256 Additions = 512 FLOPS
+Bytes Transferred = 256 * 4 Bytes (A) + 256 * 4 Byes (B) = 2 KB = 2048 Bytes
+
+FLOPS/Bytes = 512 / 2048 = 0.25 FLOPS/Byte
+</code></pre>
+<blockquote>
+<p>To calculate each cell in the output matrix we need to load 8 Tiles each from A &amp; B over several phases, each phase includes 32 Multiply &amp; 32 Addition operations.</p>
+</blockquote>
+<pre><code class="language-markdown">Per Phase (32×32 tile):
+
+FLOPs = 32 multiply + 32 add = 64 FLOPs per thread 
+Total per phase = 1,024 threads × 64 FLOPs = 65,536 FLOPs
+
+Total (8 phases): 
+
+Total FLOPs = 65,536 × 8 = 524,288 FLOPs 
+Data loaded = 64 KB (32 KB A + 32 KB B across all phases)
+Arithmetic Intensity = 524,288 ÷ 65,536 = 8.0 FLOP/byte
+</code></pre>
+<p><strong>Summary:</strong></p>
+<table>
+<thead>
+<tr>
+<th><strong>GEMM Type</strong></th>
+<th><strong>Arithmetic Intensity</strong></th>
+<th><strong>Memory Efficiency</strong></th>
+<th><strong>Kernel Type</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Naive GEMM</strong></td>
+<td>0.25 FLOP/byte</td>
+<td>~ 2%</td>
+<td>Memory Bound</td>
+</tr>
+<tr>
+<td><strong>Tile GEMM</strong></td>
+<td>8.0 FLOP/byte</td>
+<td>~ 82%</td>
+<td>Near compute-bound</td>
+</tr>
+</tbody>
+</table>
+<h1 id="warp-and-register-tiling">Warp and Register Tiling</h1>
+<p>Tiled GEMM brings us closer to achieving peak performance in terms of <strong>arithmetic intensity</strong> and <strong>throughput</strong>. However, a deeper examination of the calculation process reveals significant opportunities for further optimization. Matrix multiplication performance is critically important for ML and Gen AI models, and we can improve upon basic tiling.</p>
+<p><strong>Block-Tiled</strong> GEMM reduces global memory bandwidth pressure by moving tiles into <strong>Shared Memory</strong> over multiple main-loop iterations. Data from shared memory is then loaded into registers for computation. However, these registers are local to each thread—data in registers cannot be shared across threads. This creates register underutilization: In the basic Block Tiled approach, each thread computes only one output element, resulting in <strong>poor register utilization</strong>. Even though the same A and B values are needed by other threads in the warp, those values cannot be shared, forcing redundant loads.</p>
+<p><strong>The Problem:</strong> In basic Block Tiled GEMM, each thread independently computes one output element and must load all required A[i][k] and B[k][j] values into its registers, consequently, even adjacent threads requiring the same data are forced to redundantly load the same values from shared memory into their private registers.</p>
+<p>Let's examine this with the following example:</p>
+<p>$$C[i][j] = \sum_{k=0}^{k-1} A[i][k] * B[k][j]$$</p>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/uploads/covers/68bfed7b9811a8682daede37/2c2e6325-44bd-41ef-b7e5-11cc83fae1ec.png" loading="lazy" decoding="async" class="zoom"></figure>
+<p>These pairs of A[i][k] and B[k][j] are loaded into registers sequentially and accumulated over the K dimension. Observe that:</p>
+<ul>
+<li>Values from the A tile are <strong>identical</strong> for both C[0][0] and C[0][1]</li>
+<li>Values from the B tile are <strong>identical</strong> for both C[0][0] and C[1][0]</li>
+</ul>
+<p>If threads within a warp are assigned to compute adjacent output elements, they can share data loaded into registers through warp-level coordination.</p>
+<p>Reuse can be achieved using Warp Primitives such as Warp synchronization &amp; Register Tiling where each thread calculates <strong>Fragment</strong>, below we will look at both approaches to understand how they differ from each other</p>
+<h2 id="warp-tiling-cooperative-thread-organization">Warp Tiling: Cooperative Thread Organization</h2>
+<p>To implement optimizations using <strong>Warp Tiling</strong>, the larger tile assigned to a <strong>Thread Block</strong> is divided into smaller tiles, often called <strong>Fragments</strong> in CUDA. Fragments are data local to threads. Threads within a warp can share this data using warp shuffle functions like <code>__shfl_sync()</code>. These functions allow data exchange between the 32 threads in a warp.</p>
+<p>The thread that owns a needed B element can broadcast it across the warp. Similarly, the thread that owns an element from A can broadcast it to other threads in the same warp. This allows the warp to collectively compute the Fragment using a series of <strong>Cooperative Outer Product</strong> accumulations. Therefore, a <strong>Fragment</strong> of the output matrix C is assigned to be collectively computed by a single warp.</p>
+<p>This process mirrors the block-level organization: just as the large input matrices are divided into <strong>Tiles</strong> assigned to a <strong>Thread Block</strong>, that Tile is further subdivided into <strong>Fragments</strong> which are collectively computed by a <strong>Warp</strong>.</p>
+<p>However, they differ in how computations are performed. While <strong>Block Tiling</strong> uses an <strong>Inner Product</strong> to compute a single output element, <strong>Warp &amp; Register Tiling</strong> uses an <strong>Outer Product</strong> to calculate multiple elements by reusing the data in Thread Registers or by shuffling the data between threads in a Warp. Below, we'll examine an example to understand the difference between inner and outer product operations.</p>
+<h2 id="inner-product-vs-outer-product">Inner Product vs Outer Product</h2>
+<p><strong>Inner Product:</strong></p>
+<p>$$C[i][j] = \sum_{k=0}^{k-1} A[i][k] * B[k][j]$$</p>
+<p><strong>Outer Product:</strong></p>
+<p>$$C[i][j] = \sum_{k=0}^{k-1} A[:][k] * B[k][:]$$</p>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/uploads/covers/68bfed7b9811a8682daede37/d588a71b-ebb2-42fc-987a-f7f7fb0e1124.svg" loading="lazy" decoding="async" class="zoom"></figure>
+<div data-node-type="callout">
+<div data-node-type="callout-emoji">💡</div>
+<div data-node-type="callout-text"><p>Block Tiling GEMM to Warp and Register Tiling introduces a shift in calculation of output elements, we move from an <strong>inner product</strong> formulation (where each thread independently calculates one output element) to an outer product formulation (where threads in a warp collectively updates the <strong>fragment </strong>over k Iterations)</p></div>
+</div>
+
+<h2 id="warp-shuffling-process">Warp Shuffling Process:</h2>
+<p>To understand how threads in a warp exchange data between themselves, we should understand the process of shuffling, threads in warp are generally termed as <strong>Lanes.</strong> CUDA library provides warp <a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#warp-shuffle-functions">functions</a> to facilitate the exchange of data between threads, but these functions require meticulous handling of data between threads . CUDA provides another set of <a href="https://gpuopen.com/learn/wmma_on_rdna3/#:~:text=As%20a%20prerequisite%2C%20we%20recommend,to%20the%20source%20code%20examples.">APIs</a> (<strong>load_matrix_sync, fill_fragment, store_matrix_sync, mma.sync</strong>)- <strong>WMMA</strong>(<strong>Warp Matrix Multiply &amp; Accumulate)</strong> which only works with Tensor Cores.</p>
+<div data-node-type="callout">
+<div data-node-type="callout-emoji">💡</div>
+<div data-node-type="callout-text"><p>Tensor Cores deserves their own section but for the purpose of this blog Tensor Cores are special types of cores optimized for Matrix Mulitplication &amp; Accumulation opeartions introduced from <strong>VOLTA</strong> Architecture. In <strong>Ampere Architecture</strong>, which we're focusing on throughout this blog, each GPU (like the A100) has <strong>108 SMs</strong> (Streaming Multiprocessors). Each SM has <strong>64 FP32 CUDA cores</strong> along with <strong>4th generation Tensor Cores</strong> that support multiple precision formats (TF32, FP64, FP16, FP32, INT8, and more). For our purposes, the relevant point is that each SM in Ampere has dedicated Tensor Cores for accelerated matrix operations.</p></div>
+</div>
+
+<p>In order to understand data exchange between threads in a warp, let us consider an example of 2×2 matrix multiplication. While a warp comprises 32 threads, for this scenario we assume a warp size of 4 threads. These 4 threads cooperate to calculate the 2×2 matrix.</p>
+<p>This example demonstrates the process of exchanging data between threads using warp shuffling. The process comprises 4 steps, shown below. This is purely to demonstrate data exchange using the <code>__shfl_sync()</code> primitive when not using the <strong>Warp Matrix Multiply and Accumulate</strong> API (<strong>WMMA</strong>).Loading data from Shared Memory to Registers</p>
+<ul>
+<li>Broadcast or Get the data from other Threads(<strong>Lanes</strong>)</li>
+<li>Compute Outer Products in each iteration</li>
+<li>Store the Results back to Shared Memory</li>
+</ul>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/uploads/covers/68bfed7b9811a8682daede37/49eb6ba9-93e9-4587-89e5-6ef4157b8dd2.svg" loading="lazy" decoding="async" class="zoom"></figure>
+<h3 id="sample-code">Sample Code</h3>
+<pre><code class="language-c">
+__global__ void warp_gemm() {
+    int threadRow = threadIdx.x / 2;
+    int threadCol = threadIdx.x % 2;
+
+    float c_accum = 0.0f;
+
+    // Use a mask of 0xF (bits 0, 1, 2, 3 set) since only 4 threads are active
+    // This mask ensures synchronization across all 4 cooperating threads
+    const unsigned int WARP_MASK = 0xF; 
+
+    // K=2
+    for (int k = 0; k &lt; K; k++) {
+        float a_val = 0.0f, b_val = 0.0f;
+
+        // Load A value - only threads in column 0 load from A
+        if (threadCol == 0) {
+            a_val = A[threadRow][k];
+        }
+
+        // threadRow * 2 gives the lane ID of the thread in column 0 of this row
+        a_val = __shfl_sync(WARP_MASK, a_val, threadRow * 2);
+
+        // Load B value - only threads in row 0 load from B
+        if (threadRow == 0) {
+            b_val = B[k][threadCol];
+        }
+
+        // Broadcast B value down the column 
+        b_val = __shfl_sync(WARP_MASK, b_val, threadCol);
+
+        // Accumulate the outer product contribution
+        c_accum += a_val * b_val;
+    }
+
+    // Write final accumulation to output matrix
+    C[threadRow][threadCol] = c_accum;
+}
+</code></pre>
+<h2 id="visualizations-warp-shuffling">Visualizations - Warp Shuffling</h2>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/uploads/covers/68bfed7b9811a8682daede37/8baada1c-d3b6-42c6-86ab-a852557aeca4.svg" loading="lazy" decoding="async" class="zoom"></figure>
+<h2 id="register-tiling">Register Tiling</h2>
+<p>While Warp Tiling achieves data reuse through <strong>cooperative computation</strong> with threads sharing data via shuffle operations, <strong>Register Tiling</strong> (also called Thread Tiling) takes a different approach: <strong>each thread independently computes multiple output elements</strong> by reusing data already loaded into its registers.</p>
+<h3 id="sample-code_1">Sample Code</h3>
+<pre><code class="language-c">
+#include&lt;stdio.h&gt;
+#include&lt;stdlib.h&gt;
+#include&lt;cuda_runtime.h&gt;
+
+__global__ void register_tiling(int* A, int* B, int* C, int M, int N, int K) {
+    // Each thread computes one element of C
+    int row = (blockIdx.y * blockDim.y + threadIdx.y) * 2;
+    int col = (blockIdx.x * blockDim.x + threadIdx.x) * 2 ;
+
+
+    float c_reg[2][2] = {0};
+
+    for(int k=0;k&lt;K;k++){
+
+        float a_reg[2];
+        float b_reg[2];
+
+        // Load elements into registers
+        for(int i=0;i&lt;2;i++){
+            a_reg[i] = A[(row + i) * K + k];
+            b_reg[i] = B[k * N + (col + i)];
+        }
+
+        // Compute partial products and accumulate
+
+        for(int i=0;i&lt;2;i++){
+            for(int j=0;j&lt;2;j++){
+                c_reg[i][j] += a_reg[i] * b_reg[j];
+            }
+        }
+    }
+
+
+    for (int i=0;i&lt;2;i++){
+        for(int j=0;j&lt;2;j++){
+            C[(row + i) * N + (col + j)] = c_reg[i][j];
+        }
+    }
+}
+
+
+int main(){
+
+    int M=4, N=4,K=4;
+    size_t size_A = M * K * sizeof(int);
+    size_t size_B = K * N * sizeof(int);
+    size_t size_C = M * N * sizeof(int);
+
+    int *h_A = (int *)malloc(size_A);
+    int *h_B = (int *)malloc(size_B);
+    int *h_C = (int *)malloc(size_C);
+
+    int *d_A, *d_B, *d_C;
+    cudaMalloc((void **)&amp;d_A, size_A);
+    cudaMalloc((void **)&amp;d_B, size_B);
+    cudaMalloc((void **)&amp;d_C, size_C);
+
+
+    // Initialize matrices
+    for (int i = 0; i &lt; M; i++)
+        for (int j = 0; j &lt; K; j++)
+            h_A[i * K + j] = i * K + j + 1;
+
+    for (int i = 0; i &lt; K; i++)
+        for (int j = 0; j &lt; N; j++)
+            h_B[i * N + j] = i * N + j + 2;
+
+    // Perform matrix multiplication
+
+    cudaMemcpy(d_A, h_A, size_A, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, size_B, cudaMemcpyHostToDevice);   
+    dim3 blockDim(2, 2);
+    dim3 gridDim((N + blockDim.x * 2 - 1) / (blockDim.x * 2), (M + blockDim.y * 2 - 1) / (blockDim.y * 2));
+    register_tiling&lt;&lt;&lt;gridDim, blockDim&gt;&gt;&gt;(d_A, d_B, d_C, M, N, K);
+    cudaMemcpy(h_C, d_C, size_C, cudaMemcpyDeviceToHost);
+
+    printf(&quot;\n-------------\n&quot;);
+    printf(&quot;Matrix A:&quot;);
+    printf(&quot;\n-------------\n&quot;);
+
+    for (int i=0;i&lt;M;i++){
+        for (int j=0; j&lt;K;j++){
+
+            printf(&quot;%3d&quot;, h_A[i*K+j]);
+        }
+        printf(&quot;\n&quot;);
+    }    
+
+    printf(&quot;\n-------------\n&quot;);
+    printf(&quot;Matrix B:&quot;);
+    printf(&quot;\n-------------\n&quot;);
+
+    for(int i=0;i&lt;K;i++){
+        for(int j=0; j&lt;N;j++){
+
+            printf(&quot;%3d&quot;,h_B[i*N+j]);
+        }
+        printf(&quot;\n&quot;);
+    }
+
+    printf(&quot;\n-------------\n&quot;);
+    printf(&quot;Result Matrix:C &quot;);
+    printf(&quot;\n-------------\n&quot;);
+
+    for (int i = 0; i &lt; M; i++) {
+        for (int j = 0; j &lt; N; j++) {
+            printf(&quot;%3d &quot;, h_C[i * N + j]);
+        }
+        printf(&quot;\n&quot;);
+    }
+
+
+    free(h_A);
+    free(h_B);
+    free(h_C);
+
+    return 0;
+}
+</code></pre>
+<h3 id="visulization-register-tiling-computation">Visulization - Register Tiling Computation</h3>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/uploads/covers/68bfed7b9811a8682daede37/f192ae2b-4c6f-418b-95e7-b835bfc1cdf4.svg" loading="lazy" decoding="async" class="zoom"></figure>
+<h1 id="gemm-implementation-challenges-why-cutlass-and-cublas-matter">GEMM Implementation Challenges: Why CUTLASS and cuBLAS Matter</h1>
+<p>Having explored the optimization progression—<strong>Naive GEMM → Tiled GEMM → Warp &amp; Register Tiling</strong>—with each step aligned to CUDA's memory and execution hierarchy, we can now identify the critical challenges that prevent naive implementations from achieving peak performance. While our previous discussion focused on <em>what</em> to optimize, this section examines why these optimizations are necessary and <em>what obstacles</em> we must overcome. Understanding these challenges is essential for appreciating how libraries like <a href="https://docs.nvidia.com/cutlass/media/docs/cpp/quickstart.html"><strong>CUTLASS</strong></a> and <a href="https://docs.nvidia.com/cuda/cublas/index.html"><strong>cuBLAS</strong></a> abstract away this complexity.</p>
+<p>Each of these complexities can be addressed through appropriate optimization techniques, but this requires significant <strong>expertise</strong>. Some techniques are architecture-specific, and optimization strategies are also influenced by the precision of input and intermediate matrices. Therefore, it is strongly recommended to use established libraries like <strong>CUTLASS</strong> and <strong>cuBLAS</strong>. ML frameworks such as <strong>PyTorch</strong> rely on these libraries to interface with GPUs for GEMM operations, which serve as the fundamental building block for all ML/AI algorithms.</p>
+<p><strong>Linear Regression, Logistic Regression</strong>\
+<strong>Deep Learning (ANN, RNN, LSTM,CNN)</strong>\
+<strong>Matrix Factorization (Recommendtation Systems)</strong>\
+<strong>Transformer Architecture (Text &amp; Vision)</strong></p>
+<ol>
+<li><strong>Memory Coaelscing :</strong> When loading data from global memory to shared memory, threads within a warp must access consecutive memory addresses to achieve coalesced memory access.</li>
+<li><strong>Tile Sizes &amp; Occupancy</strong>*:* Choosing the optimal tile size involves balancing shared memory usage, register consumption, and SM occupancy. Larger tiles provide better data reuse (fewer global memory accesses) but consume more shared memory and registers, limiting the number of concurrent thread blocks per SM.**</li>
+<li><strong>Bank Conflicts:</strong> Shared memory is organized into 32 banks (on modern NVIDIA GPUs), each 4 bytes wide. When multiple threads in a warp simultaneously access different addresses that map to the same bank, their accesses serialize, reducing throughput.</li>
+</ol>
+<blockquote>
+<p>This is like 32 tellers (banks) at a bank. If multiple customers (threads) need the same teller simultaneously, they must wait in line (serialization).</p>
+</blockquote>
+<div data-node-type="callout">
+   <div data-node-type="callout-emoji">💡</div>
+   <div data-node-type="callout-text"><p><strong>If <em>n</em> threads access the same bank, the access completes in <em>n</em> sequential transactions instead of 1 parallel transaction. A 32-way bank conflict reduces throughput by 32×</strong>.</p></div>
+   </div>
+<ol start="4">
+<li><strong>Sync Threads:</strong> When loading tiles from global memory to shared memory, all threads in the block cooperate. Before computation can begin, we must ensure all threads have completed their loads—this requires explicit synchronization using __syncthreads().</li>
+<li><strong>Register Pressure &amp; Spilling:</strong> While loading data from Shared Memory to Registers . Each thread requires registers to store tile fragments from matrices A and B, accumulator values for C, loop counters, and memory pointers. When register demand exceeds availability, data is spilled and stored on Global Memory which leads to high latency.</li>
+</ol>
+<p>```markdown
+   - Each SM has 65,536 registers
+   - Maximum registers per thread: 255</p>
+<p>Register Underutilization: For 8×8 register tile per thread:
+                              A fragments: 8 registers
+                              B fragments: 8 registers<br>
+                              C accumulators: 64 registers (8×8)
+                              Other Register for Computation: ~10 registers
+                              Total: ~90 registers per thread</p>
+<p>Register Spill:         For 16×16 register tile per thread:
+                              A fragments: 16 registers
+                              B fragments: 16 registers<br>
+                              C accumulators: 256 registers (16×16)
+                              Othere Register for Computation: ~10 registers
+                              Total: ~298 registers per thread (more than 255 registers)
+   ```
+6. <strong>Boundary Checking</strong>: Matrix dimensions rarely divide evenly by tile size, requiring conditional checks to avoid out-of-bounds memory accesses.</p>
+<p>```markdown
+   Scenario a)  4×4 Matrix with blockDim(2,2) → 1
+                Matrix: 4×4 = 16 elements
+                Thread block: 2×2 = 4 threads per block
+                Blocks needed: (4/2) × (4/2) = 2×2 = 4 blocks ✓
+                Each block computes: 2×2 = 4 elements
+                Total: 4 blocks × 4 elements = 16 elements (perfect fit)</p>
+<p>Scenario b) 5×5 Matrix with blockDim(2,2) → Boundary issues:
+               Matrix: 5×5 = 25 elements
+               Thread block: 2×2 = 4 threads per block
+               Blocks needed: ceil(5/2) × ceil(5/2) = 3×3 = 9 blocks</p>
+<p>Problems: 
+           - Using 4 blocks (2×2 grid): Only computes 4×4 = 16 elements
+           - Using 9 blocks (3×3 grid): Launches 9×4 = 36 threads for 25 elements
+           - 11 threads access out-of-bounds indices
+           - Requires boundary checks: if (row &lt; 5 &amp;&amp; col &lt; 5)
+   ```</p>
+<h3 id="performance-comparison-cublas-gemm-reference">Performance Comparison + cuBLAS GEMM Reference:</h3>
+<pre><code class="language-c">#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;time.h&gt;
+#include &lt;cuda_runtime.h&gt;
+#include &lt;cublas_v2.h&gt;  
+
+#define TILE_SIZE 32
+
+// Naive GEMM kernel
+__global__ void naive_gemm_kernel(float* A, float* B, float* C, int M, int N, int K) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row &lt; M &amp;&amp; col &lt; N) {
+        float sum = 0.0f;
+        for (int k = 0; k &lt; K; k++) {
+            sum += A[row * K + k] * B[k * N + col];
+        }
+        C[row * N + col] = sum;
+    }
+}
+
+// Tiled GEMM kernel
+__global__ void tiled_gemm_kernel(float* A, float* B, float* C, int M, int N, int K) {
+    __shared__ float A_tile[TILE_SIZE][TILE_SIZE];
+    __shared__ float B_tile[TILE_SIZE][TILE_SIZE];
+
+    int tx = threadIdx.x, ty = threadIdx.y;
+    int row = blockIdx.y * TILE_SIZE + ty;
+    int col = blockIdx.x * TILE_SIZE + tx;
+
+    float sum = 0.0f;
+
+    for (int tile = 0; tile &lt; (K + TILE_SIZE - 1) / TILE_SIZE; tile++) {
+        int A_col = tile * TILE_SIZE + tx;
+        A_tile[ty][tx] = (row &lt; M &amp;&amp; A_col &lt; K) ? A[row * K + A_col] : 0.0f;
+
+        int B_row = tile * TILE_SIZE + ty;
+        B_tile[ty][tx] = (B_row &lt; K &amp;&amp; col &lt; N) ? B[B_row * N + col] : 0.0f;
+
+        __syncthreads();
+
+        for (int k = 0; k &lt; TILE_SIZE; k++) {
+            sum += A_tile[ty][k] * B_tile[k][tx];
+        }
+
+        __syncthreads();
+    }
+
+    if (row &lt; M &amp;&amp; col &lt; N) {
+        C[row * N + col] = sum;
+    }
+}
+
+void generateRandomMatrix(float* matrix, int rows, int cols) {
+    for (int i = 0; i &lt; rows * cols; i++) {
+        matrix[i] = ((float)rand() / RAND_MAX) * 9.0f + 1.0f;
+    }
+}
+
+bool verifyResults(float* C1, float* C2, int size, float tolerance = 9e-2f) {
+    int errors = 0;
+    for (int i = 0; i &lt; size &amp;&amp; errors &lt; 10; i++) {
+        if (fabs(C1[i] - C2[i]) &gt; tolerance) {
+            printf(&quot;  Mismatch at %d: %.6f vs %.6f\n&quot;, i, C1[i], C2[i]);
+            errors++;
+        }
+    }
+    return errors == 0;
+}
+
+int main() {
+    // Matrix dimensions
+    int M = 1024, N = 1024, K = 1024;
+
+    size_t size_A = M * K * sizeof(float);
+    size_t size_B = K * N * sizeof(float);
+    size_t size_C = M * N * sizeof(float);
+
+    printf(&quot;╔═══════════════════════════════════════════════════════════╗\n&quot;);
+    printf(&quot;║          GEMM Performance Comparison                      ║\n&quot;);
+    printf(&quot;╚═══════════════════════════════════════════════════════════╝\n\n&quot;);
+    printf(&quot;Matrix: A(%dx%d) × B(%dx%d) = C(%dx%d)\n&quot;, M, K, K, N, M, N);
+
+    // Allocate host memory
+    float *h_A = (float*)malloc(size_A);
+    float *h_B = (float*)malloc(size_B);
+    float *h_C_naive = (float*)malloc(size_C);
+    float *h_C_tiled = (float*)malloc(size_C);
+    float *h_C_cublas = (float*)malloc(size_C);
+
+    // Allocate device memory
+    float *d_A, *d_B, *d_C;
+    cudaMalloc(&amp;d_A, size_A);
+    cudaMalloc(&amp;d_B, size_B);
+    cudaMalloc(&amp;d_C, size_C);
+
+    // Generate random matrices
+    srand(42);
+    generateRandomMatrix(h_A, M, K);
+    generateRandomMatrix(h_B, K, N);
+
+    // Copy to device
+    cudaMemcpy(d_A, h_A, size_A, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, size_B, cudaMemcpyHostToDevice);
+
+    // Create timing events
+    cudaEvent_t start, stop;
+    cudaEventCreate(&amp;start);
+    cudaEventCreate(&amp;stop);
+
+    // ═══════════════════════════════════════
+    // 1. NAIVE GEMM
+    // ═══════════════════════════════════════
+    printf(&quot;┌─────────────────────────────────────────┐\n&quot;);
+    printf(&quot;│ 1. NAIVE GEMM (No Optimization)         │\n&quot;);
+    printf(&quot;└─────────────────────────────────────────┘\n&quot;);
+
+    dim3 block_naive(32, 32);
+    dim3 grid_naive((N + 31) / 32, (M + 31) / 32);
+
+
+    // Time
+    cudaEventRecord(start);
+    naive_gemm_kernel&lt;&lt;&lt;grid_naive, block_naive&gt;&gt;&gt;(d_A, d_B, d_C, M, N, K);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+
+    float naive_time;
+    cudaEventElapsedTime(&amp;naive_time, start, stop);
+    cudaMemcpy(h_C_naive, d_C, size_C, cudaMemcpyDeviceToHost);
+
+    printf(&quot;  Time:        %7.2f ms\n&quot;, naive_time);
+    printf(&quot;  Speedup:     %7.2fx (baseline)\n\n&quot;, 1.0);
+
+    // ═══════════════════════════════════════
+    // 2. TILED GEMM
+    // ═══════════════════════════════════════
+    printf(&quot;┌─────────────────────────────────────────┐\n&quot;);
+    printf(&quot;│ 2. TILED GEMM (Shared Memory)           │\n&quot;);
+    printf(&quot;└─────────────────────────────────────────┘\n&quot;);
+
+    dim3 block_tiled(TILE_SIZE, TILE_SIZE);
+    dim3 grid_tiled((N + TILE_SIZE - 1) / TILE_SIZE, (M + TILE_SIZE - 1) / TILE_SIZE);
+
+    // Warm up
+    tiled_gemm_kernel&lt;&lt;&lt;grid_tiled, block_tiled&gt;&gt;&gt;(d_A, d_B, d_C, M, N, K);
+    cudaDeviceSynchronize();
+
+    // Time
+    cudaEventRecord(start);
+    tiled_gemm_kernel&lt;&lt;&lt;grid_tiled, block_tiled&gt;&gt;&gt;(d_A, d_B, d_C, M, N, K);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+
+    float tiled_time;
+    cudaEventElapsedTime(&amp;tiled_time, start, stop);
+    cudaMemcpy(h_C_tiled, d_C, size_C, cudaMemcpyDeviceToHost);
+
+    printf(&quot;  Time:        %7.2f ms\n&quot;, tiled_time);
+    printf(&quot;  Speedup:     %7.2fx vs Naive\n\n&quot;, naive_time / tiled_time);
+
+    // ═══════════════════════════════════════
+    // 3. cuBLAS Library
+    // ═══════════════════════════════════════
+    printf(&quot;┌─────────────────────────────────────────┐\n&quot;);
+    printf(&quot;│ 3. cuBLAS                               │\n&quot;);
+    printf(&quot;└─────────────────────────────────────────┘\n&quot;);
+
+    // Create cuBLAS handle
+    cublasHandle_t handle;
+    cublasCreate(&amp;handle);
+
+    // cuBLAS uses column-major, hence we compute: C = B^T * A^T = (A * B)^T
+    // Then interpret result as row-major C
+    float alpha = 1.0f;
+    float beta = 0.0f;
+
+    // Warm up
+    cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N,
+                N, M, K,
+                &amp;alpha,
+                d_B, N, // Actual Dimension of B = K * N , B^T = N * K
+                d_A, K, // Actural Dimension of A = M * K , A^T = K*M
+                &amp;beta,
+                d_C, N);
+    cudaDeviceSynchronize();
+
+    // Time
+    cudaEventRecord(start);
+    cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N,
+                N, M, K,
+                &amp;alpha,
+                d_B, N,
+                d_A, K,
+                &amp;beta,
+                d_C, N);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+
+    float cublas_time;
+    cudaEventElapsedTime(&amp;cublas_time, start, stop);
+    cudaMemcpy(h_C_cublas, d_C, size_C, cudaMemcpyDeviceToHost);
+
+    printf(&quot;  Time:        %7.2f ms\n&quot;, cublas_time);
+    printf(&quot;  Speedup:     %7.2fx vs Naive\n&quot;, naive_time / cublas_time);
+    printf(&quot;               %7.2fx vs Tiled\n\n&quot;, tiled_time / cublas_time);
+
+    // ═══════════════════════════════════════
+    // VERIFICATION
+    // ═══════════════════════════════════════
+    printf(&quot;┌─────────────────────────────────────────┐\n&quot;);
+    printf(&quot;│ Result Verification                     │\n&quot;);
+    printf(&quot;└─────────────────────────────────────────┘\n&quot;);
+
+    bool tiled_correct = verifyResults(h_C_naive, h_C_tiled, M * N);
+    printf(&quot;  Tiled vs Naive:  %s\n&quot;, tiled_correct ? &quot;✓ PASS&quot; : &quot;✗ FAIL&quot;);
+
+    bool cublas_correct = verifyResults(h_C_naive, h_C_cublas, M * N);
+    printf(&quot;  cuBLAS vs Naive: %s\n\n&quot;, cublas_correct ? &quot;✓ PASS&quot; : &quot;✗ FAIL&quot;);
+
+    // ═══════════════════════════════════════
+    // SUMMARY TABLE
+    // ═══════════════════════════════════════
+    printf(&quot;╔═══════════════════════════════════════════════════╗\n&quot;);
+    printf(&quot;║                    Performance Summary            ║\n&quot;);
+    printf(&quot;╠════════════════╦══════════╦═══════════╦═══════════╣\n&quot;);
+    printf(&quot;║ Implementation ║   Time   ║  Speedup  ║ Status    ║\n&quot;);
+    printf(&quot;╠════════════════╬══════════╬═══════════╬═══════════╣\n&quot;);
+    printf(&quot;║ Naive GEMM     ║ %6.2f ms║   1.00x   ║   ✓       ║\n&quot;,
+           naive_time);
+    printf(&quot;║ Tiled GEMM     ║ %6.2f ms║  %5.2fx   ║   %s       ║\n&quot;, 
+           tiled_time, naive_time/tiled_time, 
+           tiled_correct ? &quot;✓&quot; : &quot;✗&quot;);
+    printf(&quot;║ cuBLAS         ║ %6.2f ms║  %5.2fx   ║   %s       ║\n&quot;, 
+           cublas_time, naive_time/cublas_time,
+           cublas_correct ? &quot;✓&quot; : &quot;✗&quot;);
+    printf(&quot;╚════════════════╩══════════╩═══════════╩═══════════╩\n&quot;);
+
+    // Cleanup
+    free(h_A); free(h_B); 
+    free(h_C_naive); free(h_C_tiled); free(h_C_cublas);
+    cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
+    cudaEventDestroy(start); cudaEventDestroy(stop);
+    cublasDestroy(handle);
+
+    return 0;
+}
+</code></pre>
+<h1 id="profiling-pytorch">Profiling Pytorch</h1>
+<p>All ML/AI algorithms discussed earlier—Linear Regression, Logistic Regression, Deep Learning (ANN, RNN, LSTM, CNN), Matrix Factorization, and Transformer Architectures—share a common computational core: matrix multiplication. These operations occur during:</p>
+<ul>
+<li><strong>Forward propagation</strong>: Computing activations and predictions</li>
+<li><strong>Backward propagation</strong>: Computing gradients for weight updates</li>
+<li><strong>Training</strong>: Both forward and backward passes repeatedly</li>
+<li><strong>Inference</strong>: Forward pass for predictions</li>
+</ul>
+<p>The performance implications are significant:</p>
+<p><strong>Training</strong>: Unoptimized GEMM can increase training time from days to weeks, blocking rapid experimentation and model iteration.</p>
+<p><strong>Inference Latency</strong>: Slow inference degrades user experience in production systems (Gemini, ChatGPT, Claude) where users expect sub-second response times.</p>
+<p><strong>Safety-Critical Systems</strong>: Autonomous driving systems require real-time inference. Increased latency creates dangerous situations where the vehicle cannot respond quickly enough to changing conditions.</p>
+<p>For these reasons, modern ML frameworks like <strong>PyTorch</strong>, <strong>TensorFlow</strong>, and <strong>JAX</strong> depend entirely on highly optimized GEMM implementations provided by <strong>cuBLAS</strong> and <strong>CUTLASS</strong>.</p>
+<p>These libraries provide specialized implementations for different precision levels:</p>
+<p><strong>HGEMM (Float 16) - Half Precision GEMM</strong>\
+<strong>SGEMM (Float 32) - Single Precision GEMM</strong>\
+<strong>DGEMM (Float 64) - Double Precision GEMM</strong></p>
+<h3 id="hgemm">HGEMM</h3>
+<pre><code class="language-python">
+import torch
+device= &quot;cuda&quot; if torch.cuda.is_available() else &quot;cpu&quot;
+
+A = torch.rand(1024, 512, dtype=torch.float16, device=device)
+B = torch.rand(512, 2048, dtype=torch.float16, device=device)
+
+D = torch.matmul(A, B)
+torch.cuda.synchronize()
+</code></pre>
+<blockquote>
+<p><details data-node-type="hn-details-summary">
+<summary>nsys profile -t cuda,nvtx,cublas --cuda-memory-usage=true --force-overwrite true --cudabacktrace all:500 --python-backtrace --output half_precision_profile python pytorch/pytorch_cuda_profile.py</summary>
+<p></p>
+</details></p>
+</blockquote>
+<h3 id="profiling-with-nsight-systems">Profiling with Nsight Systems</h3>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/res/hashnode/image/upload/v1761025661883/50007221-ae1a-4602-b8d8-3766447fd355.png" loading="lazy" decoding="async" class="zoom"></figure>
+<h3 id="sgemm">SGEMM</h3>
+<pre><code class="language-python">import torch
+device= &quot;cuda&quot; if torch.cuda.is_available() else &quot;cpu&quot;
+
+A = torch.rand(1024, 512, dtype=torch.float32, device=device)
+B = torch.rand(512, 2048, dtype=torch.float32, device=device)
+
+D = torch.matmul(A, B)
+torch.cuda.synchronize()
+</code></pre>
+<blockquote>
+<p><details data-node-type="hn-details-summary">
+<summary>nsys profile -t cuda,nvtx,cublas --cuda-memory-usage=true --force-overwrite true --cudabacktrace all:500 --python-backtrace --output signle_precision_profile python pytorch/pytorch_cuda_profile.py</summary>
+<p></p>
+</details></p>
+</blockquote>
+<h3 id="profiling-with-nsight-systems_1">Profiling with Nsight Systems</h3>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/res/hashnode/image/upload/v1761033486415/91bb7fbe-8f8b-4035-85f0-b0a7e8db9282.png" loading="lazy" decoding="async" class="zoom"></figure>
+<blockquote>
+<p><details data-node-type="hn-details-summary">
+<summary>nsys profile -t cuda,nvtx,cublas --cuda-memory-usage=true --force-overwrite true --cudabacktrace all:500 --python-backtrace --output double_precision_profile python pytorch/pytorch_cuda_profile.py</summary>
+<p></p>
+</details></p>
+</blockquote>
+<h3 id="dgemm">DGEMM</h3>
+<pre><code class="language-python">import torch
+device= &quot;cuda&quot; if torch.cuda.is_available() else &quot;cpu&quot;
+
+A = torch.rand(1024, 512, dtype=torch.float64, device=device)
+B = torch.rand(512, 2048, dtype=torch.float64, device=device)
+
+D = torch.matmul(A, B)
+torch.cuda.synchronize()
+</code></pre>
+<h3 id="profiling-with-nsight-systems_2">Profiling with Nsight Systems</h3>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/res/hashnode/image/upload/v1761033891476/a4c2d9b3-962b-4ca2-a3be-9a182b257c0e.png" loading="lazy" decoding="async" class="zoom"></figure>
+<figure class="fig"><img alt="" src="https://cdn.hashnode.com/res/hashnode/image/upload/v1763658227461/1356059e-b8ae-4baa-a65b-a85a1e264368.png" loading="lazy" decoding="async" class="zoom"></figure>
+<p>Ref: <a href="https://www.youtube.com/watch?v=BBhZ9Ltpmdw&amp;t=1886s">https://www.youtube.com/watch?v=BBhZ9Ltpmdw&amp;t=1886s</a></p>
+<h1 id="optimizations-beyond-tiling">Optimizations Beyond Tiling</h1>
+<p>GEMM optimizations can be divided into two categories: software-driven and hardware-driven optimizations.</p>
+<p>The tiling hierarchy (Thread Block → Warp → Register) represents software-level optimizations that can be implemented manually using libraries like CUTLASS and cuBLAS, or without them. When new GPU architectures are released, they provide improvements at both levels:</p>
+<ul>
+<li><strong>Hardware optimizations</strong> are built into the architecture itself (e.g., Hopper's TMA and WGMMA units)</li>
+<li><strong>Software optimizations</strong> are provided through the CUDA Toolkit and libraries (CUTLASS &amp; cuBLAS)</li>
+</ul>
+<p>In this article, we use <strong>Ampere</strong> architecture as our reference point. Later architectures like <strong>Hopper</strong> introduced dedicated hardware units (TMA &amp; WGMMA) that automate what was previously done in software. Beyond the core tiling optimizations.Several additional techniques can significantly improve performance. Below are a few of the many optimizations—some of these have been implemented by frameworks. Using libraries to write kernels makes the job easier, as they also handle architectural optimizations automatically.</p>
+<ol>
+<li><strong>Software Pipelining (Double Buffering)</strong> - Pipelining hides memory latency by overlapping data loading with computation. While data is being loaded from global memory to shared memory (or from shared memory to registers), CUDA cores remain idle. By overlapping loading and computing, we can hide this latency.</li>
+</ol>
+<p>a. <strong>While computing tile N, simultaneously load tile N+1</strong></p>
+<p>b. <strong>While computing tile N+1, simultaneously load tile N+2</strong></p>
+<p>This creates a pipeline where the GPU is always doing useful work instead of waiting for memory transfers. <a href="https://developer.nvidia.com/blog/cutlass-linear-algebra-cuda/#software_pipelining">Reference</a>
+2. <strong>Parallelized Reductions (Split-K Reduction)</strong>- Matrix multiplication <strong>C[M×N] = A[M×K] × B[K×N]</strong> requires each output element to accumulate K products. When matrices are non-uniform: - Large K with small M or N → Creates "tall" or "wide" matrices - Insufficient parallelism → Not enough thread blocks to utilize all GPU cores, Splitting across K dimension allows to launch more Thread Blocks further increasing GPU Utilization. <a href="https://docs.nvidia.com/cutlass/media/docs/cpp/efficient_gemm.html#parallelized-reductions">Reference</a>
+3. <strong>Mixed Precision</strong> : Modern GPU architectures provide specialized hardware for reduced-precision arithmetic, offering significant performance improvements when precision requirements allow for it.</p>
+<p>Mixed precision uses a combination of data types in a single model, thus reduces the training time with minimum loss in accuracy. <a href="https://developer.nvidia.com/blog/video-mixed-precision-techniques-tensor-cores-deep-learning/">Reference</a>
+4. <strong>Quantization</strong>: Quantization converts model weights and activations to lower precision formats (INT8, INT4) . Train model in FP32/FP16 , Post-Training Quantization (PTQ): Calibrate and convert to INT8/INT4 &amp; Deploy quantized model for inference. This improves the GEMM operations during inference
+5. <strong>Shared Memory Bank Conflict Avoidance</strong>: When we discussed the complexities involved in optimizing using tiling, we touched on bank conflicts. This can be solved by employing techniques like <strong>Padding</strong> (add extra columns to shift memory layout and avoid conflicts) and <strong>Swizzling</strong> (XOR operations on the bits of row &amp; column indices). Frameworks like <strong>CUTLASS</strong> automatically handle bank conflict avoidance through memory layout design.</p>
+<h1 id="summary">Summary</h1>
+<p>In this blog, we explored GEMM optimization on GPUs by navigating through execution and memory hierarchy layers. Most optimization techniques target improving data orchestration between memory layers—from Global Memory → Shared Memory → Registers—to minimize expensive global memory accesses. The goal is simple: compute as many elements as possible using data already loaded into faster memory tiers.</p>
+<p><strong>Naive GEMM</strong> exposed the fundamental challenge: poor memory reuse leading to severe bandwidth limitations, achieving only 2% of peak memory efficiency.</p>
+<p><strong>Tiled GEMM</strong> introduced shared memory to enable data reuse, improving performance by loading matrix tiles once and reusing them across multiple computations—increasing arithmetic intensity from 0.25 to 8.0 FLOP/Byte.</p>
+<p><strong>Warp and Register Tiling</strong> further optimized computation through cooperative thread organization and register-level data reuse, bringing performance closer to compute-bound operation.</p>
+<p>However, achieving production-grade performance requires handling numerous complexities: memory coalescing, bank conflicts, register pressure, boundary conditions, and architecture-specific tuning. This is why libraries like <strong>CUTLASS</strong> and <strong>cuBLAS</strong> are essential—they encapsulate years of optimization expertise and automatically handle these challenges.</p>
+<p>Understanding these concepts is crucial for developers working on AI/ML applications, not to implement GEMM from scratch, but to make informed decisions about computational strategies and appreciate why matrix operations form the performance-critical foundation of modern deep learning.</p>
+<h1 id="references">References</h1>
+<ul>
+<li><a href="https://siboehm.com/articles/22/CUDA-MMM">Siboehm CUDA Matmul Kernel Worklog</a></li>
+<li><a href="https://developer.nvidia.com/blog/cutlass-linear-algebra-cuda/#:~:text=One%20of%20the%20most%20exciting,TFLOP%2Fs%20with%20high%20efficiency">Fast Linear Algebra in CUDA C++</a></li>
+<li><a href="https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html#programming-model">CUDA Programming Model</a></li>
+<li><a href="https://leimao.github.io/article/CUDA-Matrix-Multiplication-Optimization/">Lei Mao - CUDA Matrix Multiplication Optimization</a></li>
+<li><a href="https://developer.nvidia.com/blog/nvidia-ampere-architecture-in-depth/">NVIDIA A100(Ampere) Architecture</a></li>
+<li><a href="https://developer.nvidia.com/gtc/2020/video/s21745-vid">Developing CUDA kernels to push Tensor Cores to their Limit</a></li>
+<li><a href="https://research.colfax-intl.com/tutorial-python-binding-for-cuda-libraries-in-pytorch/">Python Bindings for CUDA Libraries in Pytorch</a></li>
+<li><a href="https://research.colfax-intl.com/tutorial-matrix-transpose-in-cutlass/">Matrix Transpose</a></li>
+</ul>
+  </div>
+  <nav class="post-updown"><a class="pn prev" href="optimizing-gemm-gpu-architecture.html">&larr; Optimizing GEMM: GPU Architecture Essentials</a><a class="pn next" href="thread-indexing.html">GPU Thread Hierarchy and Indexing &rarr;</a></nav>
+</article>
+</main>
+<footer class="site-footer">
+  <span>&copy; Varada V N A Santosh</span>
+  <a href="#top" class="totop">Back to top &uarr;</a>
+</footer>
+<div id="lightbox" hidden><img alt=""></div>
+<script src="../assets/hljs/highlight.min.js"></script>
+<script src="../assets/katex/katex.min.js"></script>
+<script src="../assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('pre code').forEach(function(b){hljs.highlightElement(b);});
+  renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'$',right:'$',display:false},
+    {left:'\\(',right:'\\)',display:false}
+  ],throwOnError:false});
+  // heading anchors
+  document.querySelectorAll('.content h1[id],.content h2[id],.content h3[id]').forEach(function(h){
+    h.classList.add('anchored');
+    h.addEventListener('click',function(e){if(e.target===h){location.hash=h.id;}});
+  });
+  // copy buttons
+  document.querySelectorAll('.content pre').forEach(function(pre){
+    var btn=document.createElement('button'); btn.className='copy'; btn.textContent='Copy';
+    btn.addEventListener('click',function(){
+      navigator.clipboard.writeText(pre.innerText).then(function(){
+        btn.textContent='Copied'; setTimeout(function(){btn.textContent='Copy';},1500);
+      });
+    });
+    pre.appendChild(btn);
+  });
+  // lightbox
+  var lb=document.getElementById('lightbox'), lbimg=lb.querySelector('img');
+  document.querySelectorAll('.content img.zoom').forEach(function(im){
+    im.addEventListener('click',function(){lbimg.src=im.currentSrc||im.src; lb.hidden=false;});
+  });
+  lb.addEventListener('click',function(){lb.hidden=true; lbimg.src='';});
+});
+</script>
+</body>
+</html>

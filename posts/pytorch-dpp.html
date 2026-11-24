@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pytorch DDP Setup -Multi Node · Varada V N A Santosh</title>
+<meta name="description" content="ML / AI &amp; Inference Engineering notes by Varada V N A Santosh.">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="../assets/hljs/github.min.css">
+</head>
+<body>
+<header class="site-nav">
+  <a class="brand" href="../index.html">Varada V N A Santosh</a>
+  <nav>
+    <a href="../index.html">Home</a>
+    <a href="../index.html#notes">Notes</a>
+    <a href="../index.html#about">About</a>
+    <a href="https://github.com/varadasantosh" target="_blank" rel="noopener">GitHub</a>
+  </nav>
+</header>
+<main>
+<article class="post" id="top">
+  <p class="eyebrow"><a href="../index.html#notes">Distributed Training</a> · 4 min read</p>
+  <h1>Pytorch DDP Setup -Multi Node</h1>
+  <details class="toc"><summary>On this page</summary><ul><li class="l2"><a href="#1-ec2-infrastructure-setup">1️⃣ EC2 Infrastructure Setup</a></li><li class="l2"><a href="#2-nvidia-driver-installation">2️⃣ NVIDIA Driver Installation</a></li><li class="l2"><a href="#3-validate-network-communication-between-nodes">3️⃣ Validate Network Communication Between Nodes</a></li><li class="l2"><a href="#4-transfer-training-script-to-instance">4️⃣ Transfer Training Script to Instance</a></li><li class="l2"><a href="#5-training-script">5️⃣ Training Script</a></li><li class="l2"><a href="#6-python-dependencies-requirementstxt">6️⃣ Python Dependencies (requirements.txt)</a></li><li class="l2"><a href="#7-environment-setup">7️⃣ Environment Setup</a></li><li class="l2"><a href="#8-running-ddp-with-torchrun">8️⃣ Running DDP with torchrun</a></li></ul></details>
+  <div class="content">
+<h2 id="1-ec2-infrastructure-setup">1️⃣  EC2 Infrastructure Setup</h2>
+<p>Launch Two EC2 Instances</p>
+<ul>
+<li><strong>Instance Type</strong>: <code>g4dn.xlarge</code></li>
+<li><strong>AMI</strong>: Ubuntu 22.04 (x86_64)</li>
+</ul>
+<p><strong>Note</strong> Intially tried with Amazon Linux – there were compatibility issues with NVIDIA libraries.</p>
+<table>
+<thead>
+<tr>
+<th>Hostname</th>
+<th>Private DNS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>pytorch-ddp-1</td>
+<td><code>ip-172-31-8-59.us-west-2.compute.internal</code></td>
+</tr>
+<tr>
+<td>pytorch-ddp-2</td>
+<td><code>ip-172-31-9-180.us-west-2.compute.internal</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>✅ Assigned same SSH keypair for both EC2 Instances</li>
+<li>✅ Assigned the same VPC &amp; Subnet (This is required for both MASTER &amp; WORKER to communicate)</li>
+<li>✅ Assigned default Security Group</li>
+<li>✅ Update Seucrity Group Inbound Rules to allow TCP traffic on PORT <strong>22</strong> (Required for connecting to instances via SSH) </li>
+<li>✅ Add new Inbound Rule to Security Group to allow port range <strong>0-65535</strong> referring to the same Security Groups as Source
+     (Security Group assigned to EC2 Instance)</li>
+</ul>
+<h2 id="2-nvidia-driver-installation">2️⃣  NVIDIA Driver Installation</h2>
+<ul>
+<li>sudo apt update</li>
+<li>sudo apt install -y nvidia-driver-535</li>
+</ul>
+<h2 id="3-validate-network-communication-between-nodes">3️⃣  Validate Network Communication Between Nodes</h2>
+<ul>
+<li>Master -&gt; Worker</li>
+</ul>
+<pre><code class="language-shell">ssh -i &quot;pytorch-dpp.pem&quot; ubuntu@ec2-35-88-110-204.us-west-2.compute.amazonaws.com
+nc -zv 172.31.9.180 22
+</code></pre>
+<figure class="fig"><img alt="master to worker" src="../images/training/DDP/master_worker.png" loading="lazy" decoding="async" class="zoom"></figure>
+<ul>
+<li>Worker -&gt; Master </li>
+</ul>
+<pre><code class="language-shell">ssh -i pytorch-dpp.pem ubuntu@ec2-34-221-186-92.us-west-2.compute.amazonaws.com
+nc -zv 172.31.8.59 22
+</code></pre>
+<figure class="fig"><img alt="worker to master" src="../images/training/DDP/worker_master.png" loading="lazy" decoding="async" class="zoom"></figure>
+<h2 id="4-transfer-training-script-to-instance">4️⃣ Transfer Training Script to Instance</h2>
+<p><code>shell 
+  scp -i pytorch-dpp.pem lr_multigpu.py ubuntu@ec2-35-88-110-204.us-west-2.compute.amazonaws.com:/home/ubuntu
+  scp -i pytorch-dpp.pem utils/dataset.py ubuntu@ec2-35-88-110-204.us-west-2.compute.amazonaws.com:/home/ubuntu/utils
+  scp -i pytorch-dpp.pem requirements.txt ubuntu@ec2-35-88-110-204.us-west-2.compute.amazonaws.com:/home/ubuntu</code></p>
+<h2 id="5-training-script">5️⃣ Training Script</h2>
+<pre><code class="language-python"># lr_multigpu.py
+
+
+import torch
+import torch.nn as nn
+import torch.distributed as dist
+import torch.multiprocessing as mp
+import os
+import datetime
+
+from torch.utils.data import  DataLoader,DistributedSampler
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributed import init_process_group,destroy_process_group
+from sklearn.datasets import make_regression
+from utils.dataset import MyDataset
+
+
+class torchMultiLR():
+
+    def __init__(self, model, loss_fn, optimizer, gpu_rank, epoch,features, target):
+        print(f&quot;Initialize Training Model , Loss Function, Optimizer etc on GPU Rank: {gpu_rank}&quot;)
+
+        self.model = model.to(gpu_rank)
+        self.model = DDP(self.model, device_ids=[gpu_rank])
+        self.loss_fn = loss_fn
+        self.optimizer = optimizer
+        self.gpu_rank = gpu_rank
+        self.epoch = epoch
+        self.features = features
+        self.target = target
+        print(&quot;Completed Initializing Training Model , Loss Function, Optimizer etc&quot;)
+
+    def fit(self, dataloader:DataLoader):
+         for epoch in range(self.epoch):
+            for batch_idx, (features, target, indices) in enumerate(dataloader):
+                local_rank =  int(os.environ.get(&quot;LOCAL_RANK&quot;, 0))
+                print(f&quot;training on epoch:-{epoch} , rank :-{local_rank}&quot;)
+                print(f&quot; Epoch:- {epoch} [Rank {dist.get_rank()}] Batch {batch_idx} - Sample indices: {indices.tolist()}&quot;)
+                features =features.to(self.gpu_rank)
+                target = target.to(self.gpu_rank)
+                y_pred = self.model(features)
+                loss = self.loss_fn(y_pred,target)
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+            print(f&quot;Current Iteration:-{epoch}, on Running on Rank:-{self.gpu_rank}, loss is %.2f&quot;, loss)
+            self._savechckpt(&quot;gpucheckpt.pt&quot;)
+
+    def _savechckpt(self, path):
+
+        if self.gpu_rank==0:
+            snapshot={}
+            snapshot['model_params'] = self.model.module.state_dict()
+            snapshot['features'] = self.features.to(self.gpu_rank)
+            snapshot['target'] = self.target.to(self.gpu_rank)
+            snapshot['model'] = self.model.module
+            torch.save(snapshot,path)
+
+
+def setup_ddp(rank, world_size):
+
+    print(&quot;Before Initializing Process Group&quot;)
+    torch.cuda.set_device(rank)
+    init_process_group(backend=&quot;nccl&quot;)
+    # init_process_group(backend=&quot;nccl&quot;,rank=rank, world_size=world_size,timeout=datetime.timedelta(seconds=120))
+    print(&quot;After Initializing Process Group&quot;)
+
+def main(rank:int, epoch:int ,batch_size:int):
+
+        local_rank =  int(os.environ.get(&quot;LOCAL_RANK&quot;, 0))
+        world_size = int(os.environ.get(&quot;WORLD_SIZE&quot;, 1))
+        setup_ddp(local_rank,world_size)
+        data = make_regression(n_samples=100000, n_features=1, n_targets=1, random_state=42)
+        print(&quot;Data Preparation&quot;)
+        features = torch.tensor(data[0], dtype=torch.float32).to(local_rank)
+        target = torch.tensor(data[1], dtype=torch.float32).to(local_rank)
+        target = target.view(target.shape[0],1)
+        custom_dataset = MyDataset(features,target)
+        custom_dataloader = DataLoader(dataset= custom_dataset,
+                                       batch_size= batch_size,
+                                       shuffle=False,
+                                       sampler= DistributedSampler(custom_dataset)
+                                        )
+        print(&quot;Model Initialized&quot;)                                
+        model = torch.nn.Sequential(nn.Linear(features.shape[1],5),
+                                    nn.Linear(5,1)).to(local_rank)
+
+        print(&quot;Loss Function &amp; Optimizer Definition&quot;)
+        loss_fn = torch.nn.MSELoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr = 0.01)                                    
+        torch_lr = torchMultiLR(model=model,loss_fn=loss_fn,optimizer=optimizer,gpu_rank=local_rank,epoch=epoch, features=features,target=target)
+        print(&quot;Starting trainign process&quot;)
+        torch_lr.fit(custom_dataloader)
+        destroy_process_group()
+
+
+if __name__ == &quot;__main__&quot;:
+
+    print(f&quot;Global Rank:- {os.environ.get(&quot;RANK&quot;)}&quot;)
+    print(f&quot;Node Rank:-, {os.environ.get(&quot;LOCAL_RANK&quot;),0}&quot;)
+    print(f&quot;World Size:- {os.environ.get(&quot;WORLD_SIZE&quot;)}&quot;)
+    global_rank = os.environ.get(&quot;RANK&quot;)
+    epoch = 100
+    batch_size =64
+    main(int(global_rank),epoch,batch_size)
+
+
+</code></pre>
+<pre><code class="language-python"># utils/dataset.py
+
+from torch.utils.data import Dataset
+
+
+class MyDataset(Dataset):
+
+    def __init__(self, features, target):
+        self.features = features
+        self.target  = target
+
+    def __len__(self):
+        return self.features.shape[0]
+
+    def __getitem__(self,index):
+        return (self.features[index], self.target[index],index)
+</code></pre>
+<h2 id="6-python-dependencies-requirementstxt">6️⃣  Python Dependencies (<code>requirements.txt</code>)</h2>
+<pre><code class="language-text">torch==2.6.0
+scikit-learn==1.6.1
+
+</code></pre>
+<h2 id="7-environment-setup">7️⃣  Environment Setup</h2>
+<pre><code class="language-shell"> sudo apt install python3.12-venv
+ python3 -vnenv ddp
+ source ddp/bin/activate
+ pip install -r requirements.txt
+ export WORLD_SIZE=2
+</code></pre>
+<h2 id="8-running-ddp-with-torchrun">8️⃣  Running DDP with torchrun</h2>
+<p>▶️ On Master Node (Rank 0)</p>
+<pre><code>torchrun --nproc_per_node=1 \
+        --nnodes=2 \
+        --node-rank=0 \
+        --rdzv_backend=c10d \
+        --rdzv_endpoint=172.31.8.59:29500 lr_multigpu.py
+</code></pre>
+<p>▶️ On Worker Node (Rank 1)           </p>
+<pre><code>torchrun \
+    --nproc_per_node=1 \
+    --nnodes=2 \
+    --node-rank=1 \
+    --rdzv_backend=c10d \
+    --rdzv_endpoint=172.31.8.59:29500 \
+    lr_multigpu.py
+</code></pre>
+  </div>
+  <nav class="post-updown"><a class="pn prev" href="distributed-training.html">&larr; Distributed Training</a><a class="pn next" href="vae-notes.html">Variational AutoEncoder Concepts &rarr;</a></nav>
+</article>
+</main>
+<footer class="site-footer">
+  <span>&copy; Varada V N A Santosh</span>
+  <a href="#top" class="totop">Back to top &uarr;</a>
+</footer>
+<div id="lightbox" hidden><img alt=""></div>
+<script src="../assets/hljs/highlight.min.js"></script>
+<script src="../assets/katex/katex.min.js"></script>
+<script src="../assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('pre code').forEach(function(b){hljs.highlightElement(b);});
+  renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'$',right:'$',display:false},
+    {left:'\\(',right:'\\)',display:false}
+  ],throwOnError:false});
+  // heading anchors
+  document.querySelectorAll('.content h1[id],.content h2[id],.content h3[id]').forEach(function(h){
+    h.classList.add('anchored');
+    h.addEventListener('click',function(e){if(e.target===h){location.hash=h.id;}});
+  });
+  // copy buttons
+  document.querySelectorAll('.content pre').forEach(function(pre){
+    var btn=document.createElement('button'); btn.className='copy'; btn.textContent='Copy';
+    btn.addEventListener('click',function(){
+      navigator.clipboard.writeText(pre.innerText).then(function(){
+        btn.textContent='Copied'; setTimeout(function(){btn.textContent='Copy';},1500);
+      });
+    });
+    pre.appendChild(btn);
+  });
+  // lightbox
+  var lb=document.getElementById('lightbox'), lbimg=lb.querySelector('img');
+  document.querySelectorAll('.content img.zoom').forEach(function(im){
+    im.addEventListener('click',function(){lbimg.src=im.currentSrc||im.src; lb.hidden=false;});
+  });
+  lb.addEventListener('click',function(){lb.hidden=true; lbimg.src='';});
+});
+</script>
+</body>
+</html>

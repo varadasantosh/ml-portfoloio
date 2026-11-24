@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bank Conflicts (Shared Memory) · Varada V N A Santosh</title>
+<meta name="description" content="ML / AI &amp; Inference Engineering notes by Varada V N A Santosh.">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="../assets/hljs/github.min.css">
+</head>
+<body>
+<header class="site-nav">
+  <a class="brand" href="../index.html">Varada V N A Santosh</a>
+  <nav>
+    <a href="../index.html">Home</a>
+    <a href="../index.html#notes">Notes</a>
+    <a href="../index.html#about">About</a>
+    <a href="https://github.com/varadasantosh" target="_blank" rel="noopener">GitHub</a>
+  </nav>
+</header>
+<main>
+<article class="post" id="top">
+  <p class="eyebrow"><a href="../index.html#notes">GPU Programming &amp; GEMM Optimization</a> · 4 min read</p>
+  <h1>Bank Conflicts (Shared Memory)</h1>
+  <details class="toc"><summary>On this page</summary><ul><li class="l1"><a href="#introduction-to-gpu-processing-high-level-overview">Introduction to GPU Processing (High Level Overview)</a></li><li class="l1"><a href="#kernel-execution">Kernel Execution</a></li><li class="l1"><a href="#warps-and-registers">Warps and Registers</a></li><li class="l2"><a href="#example-scenarios-for-matrix-loading">Example Scenarios for Matrix Loading:</a></li><li class="l1"><a href="#scenario-1">Scenario-1</a></li><li class="l1"><a href="#scenario-2">Scenario-2</a></li><li class="l1"><a href="#scenario-3">Scenario-3</a></li></ul></details>
+  <div class="content">
+<h1 id="introduction-to-gpu-processing-high-level-overview">Introduction to GPU Processing (High Level Overview)</h1>
+<p>GPUs have become increasingly popular for machine learning and HPC workloads due to their superior throughput capabilities. While CPUs utilize fewer, more complex cores optimized for sequential processing and low latency, GPUs employ hundreds or thousands of simpler cores designed for parallel processing. This fundamental architectural difference of many simple cores versus few complex cores - enables GPUs to excel at data-parallel workloads where the same operation must be performed across large datasets simultaneously."</p>
+<p>A single GPU consists of multiple Streaming Multiprocessors (SMs), each containing numerous cores. The types of cores vary by GPU architecture: pre-Volta architectures featured only CUDA cores, while later architectures (Volta, Ampere, Hopper, and Blackwell) introduced Tensor cores specifically optimized for matrix multiplication operations common in AI workloads.</p>
+<p>CUDA programming utilizes both thread and memory hierarchies to efficiently utilize these computing resources. The thread hierarchy organizes execution into a three-level structure: grids contain thread blocks, which in turn contain Warps and threads, A Warp is group of Threads. To support computation, the memory hierarchy provides data access through multiple levels: registers (fastest, per-thread), shared memory (per-block), L1/L2 caches, and global memory (largest, accessible by all threads).</p>
+<h1 id="kernel-execution">Kernel Execution</h1>
+<p>To perform computations on the GPU, developers write functions called kernels in CUDA terminology. When launching a kernel, developers specify the grid dimensions (number of thread blocks) and block dimensions (number of threads per block).
+During kernel execution, threads typically load data from global memory into shared memory to improve performance. This strategy reduces the frequency of global memory accesses, which have higher latency and lower bandwidth compared to shared memory. Once data resides in shared memory, individual threads can efficiently load values into their private registers for computation.</p>
+<p>During the process of moving data from Shared Memory to Registers , Thread needs to access this Shared Memory using Banks in Architectures like Ampere each Warp has access to 32 Banks , a warp comprises of 32 threads hence each thread can access only one bank , each bank has capacity of storing 32 bits = 4 Bytes.</p>
+<h1 id="warps-and-registers">Warps and Registers</h1>
+<p>As mentioned earlier, each warp consists of 32 threads, and each thread block may contain multiple warps. For example, a thread block with 64 threads results in 2 warps. Each thread block has its own shared memory space that all warps within the block can access.</p>
+<p>In architectures like Ampere, shared memory is organized into 32 banks. Bank conflicts occur when multiple threads within the same warp attempt to access the same bank simultaneously, forcing these accesses to be serialized and reducing memory bandwidth. To maintain optimal performance, we must design access patterns that minimize bank conflicts, a small notes these conflicts can occur between the threads of same warp trying to access same bank but this conflict does not occur when threads from different warp access the same bank of shared memory.</p>
+<h2 id="example-scenarios-for-matrix-loading">Example Scenarios for Matrix Loading:</h2>
+<p>Scenario-1:- Loading 8<em>8 matrix with Precision of Floating Point -16 Bits (Half Precision) from Shared Memory to Warp Registers
+Scenario-2:- Loading 16</em>8 matrix with Precision of Floating Point-16 Bits(Half Precision) from Shared Memory to Warp Registers
+Scenario-3:- Loading 16*16 matrix with Precision of Floating Point-16 Bits(Half Precision) from Shared Memory to Warp Registers</p>
+<figure class="fig"><img alt="No Bank Conflicts" src="../images/cuda/bank_conflicts/Bank_Conflicts.png" loading="lazy" decoding="async" class="zoom"></figure>
+<h1 id="scenario-1">Scenario-1</h1>
+<ul>
+<li>8*8 = 64 Numbers</li>
+<li>Half Precision = 2 Bytes</li>
+<li>64 * 2 Bytes = 128 Bytes</li>
+<li>Warp = 32 Threads</li>
+<li>Load 128 Bytes from Shared Memory to Registers using 32 Threads </li>
+<li>128 Bytes / 32 Threads = 4 Bytes / 1 Thread</li>
+<li>Each Thread loads 2 Numbers  - 4 Bytes</li>
+<li>Each Bank can only serve 4 Bytes per cycle</li>
+<li>This scenario does not lead to conflict, each thread access only one bank </li>
+</ul>
+<figure class="fig"><img alt="8*8 Matrix" src="../images/cuda/bank_conflicts/matrix_scenario_1.png" loading="lazy" decoding="async" class="zoom"></figure>
+<figure class="fig"><img alt="Bank Assignement Scenario-1" src="../images/cuda/bank_conflicts/Thread_Bank_Scenario_1.png" loading="lazy" decoding="async" class="zoom"></figure>
+<h1 id="scenario-2">Scenario-2</h1>
+<ul>
+<li>16*8 = 128 Numbers</li>
+<li>Half Precision = 2 Bytes</li>
+<li>128 * 2 Bytes = 256 Bytes</li>
+<li>Warp = 32 Threads</li>
+<li>Load 256 Bytes from Shared Memory to Registers using 32 Threads(Registers) </li>
+<li>256 Bytes/ 32 Threads = 8 Bytes</li>
+<li>Each Thread need to load 4 Numbers = 8 Bytes / 2 Bytes</li>
+<li>Each Bank can only serve 4 Bytes per cycle</li>
+<li>Each Thread access 2 Banks</li>
+<li>Thread-0 =&gt; Thread-15 access 0-31 Banks</li>
+<li>Thread-16 =&gt; Thread-31 access 0-31 Banks </li>
+<li>This Leads to 2 Way conflicts , hence the loading should be done in 2 Cycles (Sequentially)</li>
+</ul>
+<h1 id="scenario-3">Scenario-3</h1>
+<ul>
+<li>16*16 = 256 Numbers</li>
+<li>Half Precision = 2 Bytes</li>
+<li>256 * 2 Bytes= 512 Bytes</li>
+<li>Warp = 32 Threads</li>
+<li>Load 512 Bytes from Shared Memory to Registers with 32 Threads</li>
+<li>512 Bytes/ 32 Threads =  16 Bytes</li>
+<li>Each Thread needs to Load 8 Numbers = 16 Bytes / 2 Bytes</li>
+<li>Each Thread access 4 Banks (4 Bytes per Bank, 4 Banks for 16 Bytes)</li>
+<li>Thread-0 =&gt; Thread-8 access 0-32 Banks</li>
+<li>Thread-9 =&gt; Thread-17 access 0-32 Banks</li>
+<li>Thread-18 =&gt; Thread-25 access 0-32 Banks</li>
+<li>Thread-26 =&gt; Thread31 access 0-32 Banks</li>
+<li>This leads to 4 Way conflicts , hence the loading should be done in 4 Cycles (Sequentially)</li>
+</ul>
+<p>https://medium.com/@fatlip/cuda-shared-memory-23cd1a0d4e39
+https://medium.com/distributed-knowledge/cuda-memory-management-use-cases-f9d340f7c704</p>
+  </div>
+  <nav class="post-updown"><a class="pn prev" href="thread-indexing.html">&larr; GPU Thread Hierarchy and Indexing</a><a class="pn next" href="cuda-infra-terminology.html">CUDA Compute Capability, Driver, and Toolkit Compatibility Guide &rarr;</a></nav>
+</article>
+</main>
+<footer class="site-footer">
+  <span>&copy; Varada V N A Santosh</span>
+  <a href="#top" class="totop">Back to top &uarr;</a>
+</footer>
+<div id="lightbox" hidden><img alt=""></div>
+<script src="../assets/hljs/highlight.min.js"></script>
+<script src="../assets/katex/katex.min.js"></script>
+<script src="../assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('pre code').forEach(function(b){hljs.highlightElement(b);});
+  renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'$',right:'$',display:false},
+    {left:'\\(',right:'\\)',display:false}
+  ],throwOnError:false});
+  // heading anchors
+  document.querySelectorAll('.content h1[id],.content h2[id],.content h3[id]').forEach(function(h){
+    h.classList.add('anchored');
+    h.addEventListener('click',function(e){if(e.target===h){location.hash=h.id;}});
+  });
+  // copy buttons
+  document.querySelectorAll('.content pre').forEach(function(pre){
+    var btn=document.createElement('button'); btn.className='copy'; btn.textContent='Copy';
+    btn.addEventListener('click',function(){
+      navigator.clipboard.writeText(pre.innerText).then(function(){
+        btn.textContent='Copied'; setTimeout(function(){btn.textContent='Copy';},1500);
+      });
+    });
+    pre.appendChild(btn);
+  });
+  // lightbox
+  var lb=document.getElementById('lightbox'), lbimg=lb.querySelector('img');
+  document.querySelectorAll('.content img.zoom').forEach(function(im){
+    im.addEventListener('click',function(){lbimg.src=im.currentSrc||im.src; lb.hidden=false;});
+  });
+  lb.addEventListener('click',function(){lb.hidden=true; lbimg.src='';});
+});
+</script>
+</body>
+</html>
