@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inside a PyTorch Inference Image: Wheels, CUDA &amp; Multi-Accelerator Support · Varada V N A Santosh</title>
+<meta name="description" content="ML / AI &amp; Inference Engineering notes by Varada V N A Santosh.">
+<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="../assets/hljs/atom-one-dark.min.css">
+</head>
+<body>
+<header class="site-nav">
+  <a class="brand" href="../index.html">Varada V N A Santosh</a>
+  <nav>
+    <a href="../index.html">Home</a>
+    <a href="../index.html#notes">Notes</a>
+    <a href="https://github.com/varadasantosh" target="_blank" rel="noopener">GitHub</a>
+  </nav>
+</header>
+<main>
+<article class="post" id="top">
+  <p class="eyebrow"><a href="../index.html#notes">Setup &amp; Reference</a> · 6 min read</p>
+  <h1>Inside a PyTorch Inference Image: Wheels, CUDA &amp; Multi-Accelerator Support</h1>
+  <details class="toc"><summary>On this page</summary><ul><li class="l2"><a href="#a-wheel-is-just-a-zip-with-rules">A wheel is just a ZIP with rules</a></li><li class="l2"><a href="#whats-actually-inside-a-pytorch-gpu-install">What&#x27;s actually inside a PyTorch GPU install</a></li><li class="l2"><a href="#why-this-matters-for-serving">Why this matters for serving</a></li><li class="l2"><a href="#one-torch-many-accelerators">One torch, many accelerators</a></li><li class="l2"><a href="#takeaways">Takeaways</a></li><li class="l2"><a href="#further-reading">Further reading</a></li></ul></details>
+  <div class="content">
+<p>When you <code>pip install torch</code> for GPU and then <code>docker build</code> an inference image, you
+often end up staring at a container that is <strong>several gigabytes</strong> before a single
+model weight is added. That size is not an accident — it is the price of the
+"it just works" experience. This note opens up what is actually inside that image,
+why a Python wheel can ship an entire CUDA stack, and how one <code>torch</code> package
+manages to target NVIDIA, AMD, Apple, and Intel accelerators.</p>
+<p>This started as a deep dive into Python wheels; here I reframe it around the
+question an inference engineer actually asks: <em>what is in my serving image, and
+can I make it smaller?</em></p>
+<h2 id="a-wheel-is-just-a-zip-with-rules">A wheel is just a ZIP with rules</h2>
+<p>A wheel (<code>.whl</code>) is a ZIP archive with a fixed layout — you can literally rename it
+and unzip it:</p>
+<pre><code class="language-bash"># A wheel is a renamed ZIP file
+cp torch-2.4.0-cp311-cp311-manylinux1_x86_64.whl torch.zip
+unzip torch.zip
+</code></pre>
+<p>The filename itself is a compatibility contract:</p>
+<pre><code class="language-text">torch-2.4.0-cp311-cp311-manylinux_x86_64.whl
+      │     │     │     │
+      │     │     │     └── Platform + architecture (manylinux, x86_64)
+      │     │     └──────── ABI tag   (cp311 = CPython 3.11 ABI)
+      │     └────────────── Python tag (cp311 = CPython 3.11)
+      └──────────────────── Version (2.4.0)
+</code></pre>
+<p>Inside, two things matter for size: the <strong>compiled extension modules</strong>
+(<code>.so</code> / <code>.pyd</code> / <code>.dylib</code> — C/C++/CUDA code exposed to Python) and any
+<strong>vendored native libraries</strong> bundled alongside them. A <code>*.dist-info/</code> folder
+holds the metadata (<code>METADATA</code>, <code>WHEEL</code>, <code>RECORD</code> checksums). Tools like
+<code>auditwheel</code> (Linux), <code>delocate</code> (macOS), and <code>delvewheel</code> (Windows) are what
+copy third-party shared libraries <em>into</em> the wheel and rewrite the link paths so
+the result is self-contained — no system BLAS or CUDA toolkit required at install
+time. That self-containment is exactly why the files get large.</p>
+<h2 id="whats-actually-inside-a-pytorch-gpu-install">What's actually inside a PyTorch GPU install</h2>
+<p>The <code>torch</code> wheel holds the framework: the C++ core (<code>libtorch</code>), the Python
+bindings, and the dispatcher. On its own that is already in the hundreds of MB.
+But a CUDA-enabled install pulls in the NVIDIA runtime stack as <strong>separate
+dependency wheels</strong>, each one a slice of the CUDA ecosystem:</p>
+<table>
+<thead>
+<tr>
+<th>Package</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>nvidia-cuda-runtime-cu12</code></td>
+<td>CUDA runtime</td>
+</tr>
+<tr>
+<td><code>nvidia-cuda-nvrtc-cu12</code></td>
+<td>Runtime (JIT) kernel compilation</td>
+</tr>
+<tr>
+<td><code>nvidia-cublas-cu12</code></td>
+<td>Dense linear algebra (the GEMM engine)</td>
+</tr>
+<tr>
+<td><code>nvidia-cudnn-cu12</code></td>
+<td>Deep-learning primitives (conv, attention, norms)</td>
+</tr>
+<tr>
+<td><code>nvidia-cufft-cu12</code></td>
+<td>FFTs</td>
+</tr>
+<tr>
+<td><code>nvidia-curand-cu12</code></td>
+<td>RNG</td>
+</tr>
+<tr>
+<td><code>nvidia-cusolver-cu12</code> / <code>nvidia-cusparse-cu12</code></td>
+<td>Solvers / sparse ops</td>
+</tr>
+<tr>
+<td><code>nvidia-nccl-cu12</code></td>
+<td>Multi-GPU collectives (All-Reduce, All-Gather)</td>
+</tr>
+</tbody>
+</table>
+<p>That is the same <code>cuBLAS</code> doing your matmuls and the same <code>NCCL</code> doing the
+gradient sync from the distributed-training notes — shipped as pip packages.
+Added up, a default GPU install commonly lands around <strong>4 GB</strong> of dependencies.</p>
+<p>There are really three flavors of the install, and the size difference is stark:</p>
+<ul>
+<li><strong>CPU-only</strong> (<code>+cpu</code>): no CUDA at all — on the order of a couple hundred MB.</li>
+<li><strong>Default PyPI GPU wheel</strong>: a slim <code>torch</code> that lists the <code>nvidia-*</code> wheels as
+  dependencies, so pip assembles the CUDA stack from PyPI.</li>
+<li><strong>Bundled <code>+cuXXX</code> wheel</strong> from <code>download.pytorch.org/whl/cu124</code>: CUDA libraries
+  are packed <em>inside</em> the wheel, which is why that single file is well over a GB.</li>
+</ul>
+<p>Knowing which one you are pulling is the difference between a lean image and a
+bloated one.</p>
+<h2 id="why-this-matters-for-serving">Why this matters for serving</h2>
+<p>For an inference image, every one of those gigabytes is cold-start latency, a
+slower <code>docker pull</code> on every node, a bigger attack surface to patch, and more
+registry cost. A few levers actually move the needle:</p>
+<ul>
+<li><strong>Match CUDA to the base image.</strong> Installing the default GPU wheel on top of an
+  <code>nvidia/cuda</code> base means you ship CUDA twice — once from the base, once from the
+  <code>nvidia-*</code> wheels. Pick one source of truth.</li>
+<li><strong>Drop what you don't serve.</strong> Pure inference rarely needs NCCL (no multi-GPU
+  collective), and often doesn't need cuDNN if the model is matmul-dominated.
+  Pruning unused <code>nvidia-*</code> libraries can reclaim a lot.</li>
+<li><strong>Use the CPU wheel where it fits.</strong> Small models, embedding services, and
+  pre/post-processing sidecars often don't need CUDA at all.</li>
+<li><strong>Multi-stage builds.</strong> Build/compile in a fat stage, copy only the runtime
+  artifacts into a slim final stage.</li>
+</ul>
+<p>The point is that the wheel's self-contained design — great for a laptop — is a
+cost center in production, and it is controllable once you can see what's inside.</p>
+<h2 id="one-torch-many-accelerators">One <code>torch</code>, many accelerators</h2>
+<p>The second half of the story is <em>portability</em>. The reason <code>model.to(device)</code> reads
+the same whether <code>device</code> is an NVIDIA GPU, an Apple GPU, or an Intel GPU is
+PyTorch's <strong>device model</strong> plus its <strong>dispatcher</strong>.</p>
+<ul>
+<li><code>torch.device("cuda" | "mps" | "xpu" | "cpu")</code> names where tensors live.</li>
+<li>The <strong>dispatcher</strong> routes each operator (say, <code>aten::matmul</code>) to a
+  backend-specific kernel based on the tensor's device — cuBLAS/cuDNN on CUDA,
+  Metal Performance Shaders on MPS, oneDNN/oneMKL on XPU and CPU.</li>
+</ul>
+<p>Backends fall into two camps:</p>
+<ul>
+<li><strong>In-tree</strong> — shipped with PyTorch: <strong>CPU</strong>, <strong>CUDA</strong> (NVIDIA), <strong>MPS</strong> (Apple
+  Metal), and <strong>XPU</strong> (Intel GPU, in-tree since 2.4). <strong>ROCm</strong> (AMD) is interesting:
+  PyTorch's ROCm build reuses the same <code>torch.cuda</code> API via HIP, so most CUDA code
+  runs unchanged — you just install the ROCm wheel.</li>
+<li><strong>Out-of-tree</strong> — plugged in through extensions and "accelerator autoloading,"
+  where simply <code>import torch</code> initializes the device module: <strong>Google TPU/XLA</strong>,
+  <strong>Intel Gaudi/HPU</strong>, <strong>Huawei NPU</strong>, and others.</li>
+</ul>
+<p>Each target is a <em>separate wheel line</em> — <code>cu124</code>, <code>rocm6.x</code>, <code>xpu</code>, <code>cpu</code> — because
+each bundles a different native stack. The framework API stays stable; the native
+libraries underneath are swapped out. The same split shows up in the
+communication layer: <code>torch.distributed</code> selects <strong>NCCL</strong> on NVIDIA, <strong>RCCL</strong> on
+AMD (NCCL-compatible), <strong>oneCCL</strong> on Intel, and <strong>Gloo</strong> on CPU, so the
+All-Reduce in your training script is backend-agnostic too.</p>
+<h2 id="takeaways">Takeaways</h2>
+<ul>
+<li>A wheel is a self-contained ZIP; for <code>torch</code> that means a bundled (or
+  dependency-pulled) native CUDA stack, which is why GPU images are multi-GB.</li>
+<li>The heavy pieces — cuBLAS, cuDNN, NCCL — are the same libraries behind the
+  GEMM and distributed-training work elsewhere in this knowledge base.</li>
+<li>Image size is a deliberate trade-off (portability vs. footprint) and is
+  controllable: match CUDA to the base, prune unused libraries, use CPU wheels
+  where they fit, and build in stages.</li>
+<li>One stable PyTorch API maps onto many accelerators through the device model and
+  dispatcher; the per-backend wheels are where the hardware-specific code lives.</li>
+</ul>
+<h2 id="further-reading">Further reading</h2>
+<ul>
+<li><a href="https://pytorch.org/docs/stable/backends.html">PyTorch <code>torch.backends</code> reference</a> — the per-backend knobs (cuda, cudnn, mps, mkldnn, …).</li>
+<li><a href="https://pytorch.org/blog/pt-multidevice-integration/">Challenges in PyTorch Multi-Device Integration</a> — the device model, dispatcher, and accelerator autoloading.</li>
+<li><a href="https://packaging.python.org/en/latest/discussions/package-formats/">Python Packaging: binary distributions / wheels</a> — what a wheel is and how it's built.</li>
+</ul>
+  </div>
+  <nav class="post-updown"><a class="pn prev" href="vae-implementation.html">&larr; Variational AutoEncoder Implementation</a><a class="pn next" href="cuda-infra-terminology.html">CUDA Compute Capability, Driver, and Toolkit Compatibility Guide &rarr;</a></nav>
+</article>
+</main>
+<footer class="site-footer">
+  <span>&copy; Varada V N A Santosh</span>
+  <a href="#top" class="totop">Back to top &uarr;</a>
+</footer>
+<div id="lightbox" hidden><img alt=""></div>
+<script src="../assets/hljs/highlight.min.js"></script>
+<script src="../assets/katex/katex.min.js"></script>
+<script src="../assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  document.querySelectorAll('pre code').forEach(function(b){hljs.highlightElement(b);});
+  renderMathInElement(document.body,{delimiters:[
+    {left:'$$',right:'$$',display:true},
+    {left:'$',right:'$',display:false},
+    {left:'\\(',right:'\\)',display:false}
+  ],throwOnError:false});
+  // heading anchors
+  document.querySelectorAll('.content h1[id],.content h2[id],.content h3[id]').forEach(function(h){
+    h.classList.add('anchored');
+    h.addEventListener('click',function(e){if(e.target===h){location.hash=h.id;}});
+  });
+  // copy buttons
+  document.querySelectorAll('.content pre').forEach(function(pre){
+    var code=pre.querySelector('code');
+    if(code){var m=(code.className||'').match(/language-([a-z0-9]+)/i);
+      if(m && m[1]!=='text' && m[1]!=='plaintext'){pre.setAttribute('data-lang',m[1]);}}
+    var btn=document.createElement('button'); btn.className='copy'; btn.textContent='Copy';
+    btn.addEventListener('click',function(){
+      navigator.clipboard.writeText(pre.innerText).then(function(){
+        btn.textContent='Copied'; setTimeout(function(){btn.textContent='Copy';},1500);
+      });
+    });
+    pre.appendChild(btn);
+  });
+  // lightbox
+  var lb=document.getElementById('lightbox'), lbimg=lb.querySelector('img');
+  document.querySelectorAll('.content img.zoom').forEach(function(im){
+    im.addEventListener('click',function(){lbimg.src=im.currentSrc||im.src; lb.hidden=false;});
+  });
+  lb.addEventListener('click',function(){lb.hidden=true; lbimg.src='';});
+});
+</script>
+</body>
+</html>

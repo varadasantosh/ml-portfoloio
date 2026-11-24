@@ -7,7 +7,7 @@
 <meta name="description" content="ML / AI &amp; Inference Engineering notes by Varada V N A Santosh.">
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/katex/katex.min.css">
-<link rel="stylesheet" href="../assets/hljs/github.min.css">
+<link rel="stylesheet" href="../assets/hljs/atom-one-dark.min.css">
 </head>
 <body>
 <header class="site-nav">
@@ -15,13 +15,12 @@
   <nav>
     <a href="../index.html">Home</a>
     <a href="../index.html#notes">Notes</a>
-    <a href="../index.html#about">About</a>
     <a href="https://github.com/varadasantosh" target="_blank" rel="noopener">GitHub</a>
   </nav>
 </header>
 <main>
 <article class="post" id="top">
-  <p class="eyebrow"><a href="../index.html#notes">Generative &amp; Vision Models</a> · 5 min read</p>
+  <p class="eyebrow"><a href="../index.html#notes">Generative &amp; Vision Models</a> · 4 min read</p>
   <h1>Variational AutoEncoder Implementation</h1>
   <details class="toc"><summary>On this page</summary><ul><li class="l1"><a href="#import-libraries">Import Libraries</a></li><li class="l1"><a href="#device-info">Device Info</a></li><li class="l1"><a href="#loading-dataset">Loading Dataset</a></li><li class="l1"><a href="#linear-vae-model-wo-using-conv-layers">Linear VAE Model (W/O using Conv Layers)</a></li><li class="l1"><a href="#trainining-loop">Trainining Loop</a></li><li class="l1"><a href="#original-image">Original Image</a></li><li class="l1"><a href="#reconstructed-image-inference-with-encoder-latent-decoder">Reconstructed Image =&amp;gt; Inference with Encoder + Latent + Decoder</a></li><li class="l1"><a href="#images-generated-from-gaussian-distribution-inference-with-decoder">Images Generated from Gaussian Distribution =&amp;gt; Inference with Decoder</a></li></ul></details>
   <div class="content">
@@ -46,11 +45,6 @@ device
 <h1 id="loading-dataset">Loading Dataset</h1>
 <pre><code class="language-python">train_data = datasets.MNIST(root='./data', train=True, download=True, transform = transforms.ToTensor())
 test_data = datasets.MNIST(root='./data', train=False, download=True, transform = transforms.ToTensor())
-</code></pre>
-<pre><code>100%|██████████| 9.91M/9.91M [00:00&lt;00:00, 16.2MB/s]
-100%|██████████| 28.9k/28.9k [00:00&lt;00:00, 484kB/s]
-100%|██████████| 1.65M/1.65M [00:00&lt;00:00, 4.49MB/s]
-100%|██████████| 4.54k/4.54k [00:00&lt;00:00, 7.89MB/s]
 </code></pre>
 <h1 id="linear-vae-model-wo-using-conv-layers">Linear VAE Model (W/O using Conv Layers)</h1>
 <pre><code class="language-python">class LinearVAE(nn.Module):
@@ -117,7 +111,6 @@ test_data = datasets.MNIST(root='./data', train=False, download=True, transform 
       latent_sample = mu + epsilon * logvar
       return latent_sample
 
-
   def decode(self,latent_sample):
 
       return self.decoder(latent_sample)
@@ -137,7 +130,6 @@ test_data = datasets.MNIST(root='./data', train=False, download=True, transform 
 
     loss_fn = nn.MSELoss()
     optimizer = torch.optim.Adam(self.parameters(), lr=0.0001)
-
 
     for epoch in range(epochs):
         reconstruct_loss_epoch= 0
@@ -164,16 +156,12 @@ test_data = datasets.MNIST(root='./data', train=False, download=True, transform 
 
         print(f'Epoch:- {epoch},Total Loss:-{total_loss_epoch} , Reconstrucion Loss after Epoch:-{reconstruct_loss_epoch}, KL Loss after Epoch:-{kl_loss_epoch} ')
 
-
   def save_model(self):
 
        checkpoint = {
                     'model_state_dict': vae_model.state_dict()
                     }
        torch.save(checkpoint,'linear_vae.pth')
-
-
-
 
 </code></pre>
 <h1 id="trainining-loop">Trainining Loop</h1>
@@ -239,10 +227,8 @@ plt.imshow(grid_np, cmap='gray') # Use cmap='gray' for grayscale images
 plt.axis('off') # Hide axes
 plt.show()
 </code></pre>
-<pre><code>WARNING:matplotlib.image:Clipping input data to the valid range for imshow with RGB data ([0..1] for floats or [0..255] for integers). Got range [-1.1588097..1.2557548].
-</code></pre>
   </div>
-  <nav class="post-updown"><a class="pn prev" href="vae-notes.html">&larr; Variational AutoEncoder Concepts</a></nav>
+  <nav class="post-updown"><a class="pn prev" href="vae-notes.html">&larr; Variational AutoEncoder Concepts</a><a class="pn next" href="pytorch-inference-image.html">Inside a PyTorch Inference Image: Wheels, CUDA &amp; Multi-Accelerator Support &rarr;</a></nav>
 </article>
 </main>
 <footer class="site-footer">
@@ -268,6 +254,9 @@ document.addEventListener('DOMContentLoaded',function(){
   });
   // copy buttons
   document.querySelectorAll('.content pre').forEach(function(pre){
+    var code=pre.querySelector('code');
+    if(code){var m=(code.className||'').match(/language-([a-z0-9]+)/i);
+      if(m && m[1]!=='text' && m[1]!=='plaintext'){pre.setAttribute('data-lang',m[1]);}}
     var btn=document.createElement('button'); btn.className='copy'; btn.textContent='Copy';
     btn.addEventListener('click',function(){
       navigator.clipboard.writeText(pre.innerText).then(function(){

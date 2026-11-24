@@ -7,7 +7,7 @@
 <meta name="description" content="ML / AI &amp; Inference Engineering notes by Varada V N A Santosh.">
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/katex/katex.min.css">
-<link rel="stylesheet" href="../assets/hljs/github.min.css">
+<link rel="stylesheet" href="../assets/hljs/atom-one-dark.min.css">
 </head>
 <body>
 <header class="site-nav">
@@ -15,7 +15,6 @@
   <nav>
     <a href="../index.html">Home</a>
     <a href="../index.html#notes">Notes</a>
-    <a href="../index.html#about">About</a>
     <a href="https://github.com/varadasantosh" target="_blank" rel="noopener">GitHub</a>
   </nav>
 </header>
@@ -121,7 +120,6 @@ Within each block, threads are uniquely indexed from 0 to 4.</p>
 | y=1   | Block (1,0)  | Block (1,1)  |
 | y=2   | Block (2,0)  | Block (2,1)  |
 
-
 |       | x = 0        | x = 1        |
 |-------|--------------|--------------|
 | y=0   |       0      |    1         |
@@ -206,7 +204,6 @@ grid = [
 <pre><code>gridDim.x = 2
 gridDim.y = 3
 gridDim.z = 4
-
 
 |    blockIdx.z  |   blockIdx.y  |  blockIdx.x      |      Calculation           |  Global BlockID   |
 |----------------|---------------|------------------|--------------------------- | ------------------|
@@ -429,7 +426,6 @@ Total Threads = 6 * 8 = 48 Threads</p>
 
 
 
-
     |       5           |   5 * 8 + 0      |           40          |
     |       5           |   5 * 8 + 1      |           41          |
     |       5           |   5 * 8 + 2      |           42          |
@@ -563,7 +559,6 @@ Total Number of Threads  = 24 * 8 = 192</p>
 
 
 
-
     |       23          |   23 * 8 + 0      |           184         |
     |       23          |   23 * 8 + 1      |           185         |
     |       23          |   23 * 8 + 2      |           186         |
@@ -625,7 +620,6 @@ Block, which also becomes GlobalThreadID due to single Block</p>
     |      0       |   2           |     3            |    ( 0 * 6 * 3 ) + ( 2 * 6 ) + 3  |       15         |
     |      0       |   2           |     4            |    ( 0 * 6 * 3 ) + ( 2 * 6 ) + 4  |       16         |
     |      0       |   2           |     5            |    ( 0 * 6 * 3 ) + ( 2 * 6 ) + 5  |       17         |
-
 
     |      1       |   0           |     0            |    ( 1 * 6 * 3 ) + ( 0 * 6 ) + 0  |       18         |
     |      1       |   0           |     1            |    ( 1 * 6 * 3 ) + ( 0 * 6 ) + 1  |       19         |
@@ -722,7 +716,6 @@ blockDim.z = 2</p>
     |      0       |   2           |     3            |    ( 0 * 6 * 3 ) + ( 2 * 6 ) + 3  |       15         |
     |      0       |   2           |     4            |    ( 0 * 6 * 3 ) + ( 2 * 6 ) + 4  |       16         |
     |      0       |   2           |     5            |    ( 0 * 6 * 3 ) + ( 2 * 6 ) + 5  |       17         |
-
 
     |      1       |   0           |     0            |    ( 1 * 6 * 3 ) + ( 0 * 6 ) + 0  |       18         |
     |      1       |   0           |     1            |    ( 1 * 6 * 3 ) + ( 0 * 6 ) + 1  |       19         |
@@ -925,7 +918,6 @@ Nubmer of Thread per Block = 6 * 3 * 2 = 36
     |      0       |   2           |     4            |    ( 0 * 6 * 3 ) + ( 2 * 6 ) + 4  |       16         |
     |      0       |   2           |     5            |    ( 0 * 6 * 3 ) + ( 2 * 6 ) + 5  |       17         |
 
-
     |      1       |   0           |     0            |    ( 1 * 6 * 3 ) + ( 0 * 6 ) + 0  |       18         |
     |      1       |   0           |     1            |    ( 1 * 6 * 3 ) + ( 0 * 6 ) + 1  |       19         |
     |      1       |   0           |     2            |    ( 1 * 6 * 3 ) + ( 0 * 6 ) + 2  |       20         |
@@ -1054,6 +1046,9 @@ document.addEventListener('DOMContentLoaded',function(){
   });
   // copy buttons
   document.querySelectorAll('.content pre').forEach(function(pre){
+    var code=pre.querySelector('code');
+    if(code){var m=(code.className||'').match(/language-([a-z0-9]+)/i);
+      if(m && m[1]!=='text' && m[1]!=='plaintext'){pre.setAttribute('data-lang',m[1]);}}
     var btn=document.createElement('button'); btn.className='copy'; btn.textContent='Copy';
     btn.addEventListener('click',function(){
       navigator.clipboard.writeText(pre.innerText).then(function(){

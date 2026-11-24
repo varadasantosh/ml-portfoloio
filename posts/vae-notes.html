@@ -7,7 +7,7 @@
 <meta name="description" content="ML / AI &amp; Inference Engineering notes by Varada V N A Santosh.">
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/katex/katex.min.css">
-<link rel="stylesheet" href="../assets/hljs/github.min.css">
+<link rel="stylesheet" href="../assets/hljs/atom-one-dark.min.css">
 </head>
 <body>
 <header class="site-nav">
@@ -15,7 +15,6 @@
   <nav>
     <a href="../index.html">Home</a>
     <a href="../index.html#notes">Notes</a>
-    <a href="../index.html#about">About</a>
     <a href="https://github.com/varadasantosh" target="_blank" rel="noopener">GitHub</a>
   </nav>
 </header>
@@ -332,7 +331,7 @@ $$
 </ul>
 <p>Now we can pick a point (sample Z) and be confident it will lead you to a coherent topic (decode to a valid image or text).</p>
   </div>
-  <nav class="post-updown"><a class="pn prev" href="pytorch-dpp.html">&larr; Pytorch DDP Setup -Multi Node</a><a class="pn next" href="vae-implementation.html">Variational AutoEncoder Implementation &rarr;</a></nav>
+  <nav class="post-updown"><a class="pn prev" href="data-parallelism-ddp-to-zero.html">&larr; Data Parallelism — From Vanilla DDP to ZeRO</a><a class="pn next" href="vae-implementation.html">Variational AutoEncoder Implementation &rarr;</a></nav>
 </article>
 </main>
 <footer class="site-footer">
@@ -358,6 +357,9 @@ document.addEventListener('DOMContentLoaded',function(){
   });
   // copy buttons
   document.querySelectorAll('.content pre').forEach(function(pre){
+    var code=pre.querySelector('code');
+    if(code){var m=(code.className||'').match(/language-([a-z0-9]+)/i);
+      if(m && m[1]!=='text' && m[1]!=='plaintext'){pre.setAttribute('data-lang',m[1]);}}
     var btn=document.createElement('button'); btn.className='copy'; btn.textContent='Copy';
     btn.addEventListener('click',function(){
       navigator.clipboard.writeText(pre.innerText).then(function(){

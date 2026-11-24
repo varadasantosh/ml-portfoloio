@@ -7,7 +7,7 @@
 <meta name="description" content="ML / AI &amp; Inference Engineering notes by Varada V N A Santosh.">
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/katex/katex.min.css">
-<link rel="stylesheet" href="../assets/hljs/github.min.css">
+<link rel="stylesheet" href="../assets/hljs/atom-one-dark.min.css">
 </head>
 <body>
 <header class="site-nav">
@@ -15,13 +15,12 @@
   <nav>
     <a href="../index.html">Home</a>
     <a href="../index.html#notes">Notes</a>
-    <a href="../index.html#about">About</a>
     <a href="https://github.com/varadasantosh" target="_blank" rel="noopener">GitHub</a>
   </nav>
 </header>
 <main>
 <article class="post" id="top">
-  <p class="eyebrow"><a href="../index.html#notes">GPU Programming &amp; GEMM Optimization</a> · 4 min read</p>
+  <p class="eyebrow"><a href="../index.html#notes">Setup &amp; Reference</a> · 4 min read</p>
   <h1>CUDA Compute Capability, Driver, and Toolkit Compatibility Guide</h1>
   <details class="toc"><summary>On this page</summary><ul><li class="l1"><a href="#cuda-compute-capability">CUDA Compute Capability</a></li><li class="l1"><a href="#cuda-driver">CUDA Driver</a></li><li class="l1"><a href="#cuda-toolkit">CUDA Toolkit</a></li><li class="l1"><a href="#backward-forward-compatibility">Backward &amp;amp; Forward Compatibility</a></li><li class="l2"><a href="#gpu-architecture-compute-capability">🟢 GPU Architecture &amp;amp; Compute Capability</a></li><li class="l2"><a href="#cuda-driver-cuda-toolkit">🟢 CUDA Driver &amp;amp; CUDA Toolkit</a></li><li class="l1"><a href="#resources">Resources</a></li></ul></details>
   <div class="content">
@@ -159,7 +158,7 @@
 <li><a href="https://docs.nvidia.com/deploy/cuda-compatibility/"><strong>CUDA Toolkit and Driver Compatibility Guide</strong></a></li>
 </ul>
   </div>
-  <nav class="post-updown"><a class="pn prev" href="bank-conflicts.html">&larr; Bank Conflicts (Shared Memory)</a><a class="pn next" href="cuda-training-setup.html">CUDA Setup on AWS - Terraform &rarr;</a></nav>
+  <nav class="post-updown"><a class="pn prev" href="pytorch-inference-image.html">&larr; Inside a PyTorch Inference Image: Wheels, CUDA &amp; Multi-Accelerator Support</a><a class="pn next" href="cuda-training-setup.html">CUDA Setup on AWS - Terraform &rarr;</a></nav>
 </article>
 </main>
 <footer class="site-footer">
@@ -185,6 +184,9 @@ document.addEventListener('DOMContentLoaded',function(){
   });
   // copy buttons
   document.querySelectorAll('.content pre').forEach(function(pre){
+    var code=pre.querySelector('code');
+    if(code){var m=(code.className||'').match(/language-([a-z0-9]+)/i);
+      if(m && m[1]!=='text' && m[1]!=='plaintext'){pre.setAttribute('data-lang',m[1]);}}
     var btn=document.createElement('button'); btn.className='copy'; btn.textContent='Copy';
     btn.addEventListener('click',function(){
       navigator.clipboard.writeText(pre.innerText).then(function(){

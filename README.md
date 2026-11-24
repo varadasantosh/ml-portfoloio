@@ -1,16 +1,16 @@
 # Varada V N A Santosh — ML / Inference Engineering Portfolio
 
 A simple, static portfolio site covering GPU/CUDA GEMM optimization, Transformers
-& attention, distributed training, and generative models.
+& attention, distributed & large-scale LLM training (DDP to ZeRO), and generative
+models.
 
 The site is self-contained — no build step and no external CDNs for code. KaTeX
 (math) and highlight.js (code highlighting) are vendored under `assets/`, so it
 works offline and renders identically anywhere.
 
 > Note: the two GEMM articles embed a few diagrams hosted on Hashnode's image CDN
-> (and one NERSC roofline image). These load over the web when the site is viewed
-> online. To make the site 100% offline, download those images and drop them into
-> `images/`, then update the `<img src>` URLs in the two GEMM post HTML files.
+> (plus one NERSC roofline image). These load over the web when the site is viewed
+> online. Everything else — including all LLM-training figures — is local.
 
 ## Preview locally
 
@@ -34,7 +34,7 @@ python3 -m http.server 8000
    git push -u origin main
    ```
 
-2. On GitHub: **Settings → Pages → Build and deployment**, Source *Deploy from a
+2. On GitHub: **Settings -> Pages -> Build and deployment**, Source *Deploy from a
    branch*, branch **main**, folder **/ (root)**, Save.
 
 3. Live at `https://<your-username>.github.io/portfolio/` within a minute or two.
@@ -47,7 +47,7 @@ python3 -m http.server 8000
 ```
 index.html          Home, notes index, about
 posts/*.html        One page per note
-images/             Local figures
+images/             Local figures (CUDA, transformers, LLM-training)
 assets/style.css    Styling
 assets/katex/       Vendored KaTeX (math)
 assets/hljs/        Vendored highlight.js (code)

@@ -7,7 +7,7 @@
 <meta name="description" content="ML / AI &amp; Inference Engineering notes by Varada V N A Santosh.">
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/katex/katex.min.css">
-<link rel="stylesheet" href="../assets/hljs/github.min.css">
+<link rel="stylesheet" href="../assets/hljs/atom-one-dark.min.css">
 </head>
 <body>
 <header class="site-nav">
@@ -15,13 +15,12 @@
   <nav>
     <a href="../index.html">Home</a>
     <a href="../index.html#notes">Notes</a>
-    <a href="../index.html#about">About</a>
     <a href="https://github.com/varadasantosh" target="_blank" rel="noopener">GitHub</a>
   </nav>
 </header>
 <main>
 <article class="post" id="top">
-  <p class="eyebrow"><a href="../index.html#notes">GPU Programming &amp; GEMM Optimization</a> · 7 min read</p>
+  <p class="eyebrow"><a href="../index.html#notes">Setup &amp; Reference</a> · 7 min read</p>
   <h1>CUDA Setup on AWS - Terraform</h1>
   <details class="toc"><summary>On this page</summary><ul><li class="l1"><a href="#aws-offerings">AWS Offerings</a></li><li class="l1"><a href="#aws-ec2-instances">AWS EC2 Instances</a></li><li class="l2"><a href="#ec2-manual-setup-vanilla-ec2">EC2 + Manual Setup (Vanilla EC2):</a></li><li class="l1"><a href="#aws-deep-learning-containers-dlc">AWS Deep Learning Containers (DLC)</a></li><li class="l1"><a href="#deep-learning-amis-dlami">Deep Learning AMIs (DLAMI)</a></li><li class="l1"><a href="#note">Note</a></li><li class="l1"><a href="#steps-to-setup-using-terraform">Steps to Setup using Terraform</a></li><li class="l2"><a href="#terraform">Terraform</a></li><li class="l2"><a href="#providertf">provider.tf</a></li><li class="l2"><a href="#variablestf">variables.tf</a></li><li class="l2"><a href="#terraformtfvars">terraform.tfvars</a></li><li class="l2"><a href="#install-script-cuda-driver-docker-cuda-container-toolkit">Install Script (CUDA Driver + Docker + CUDA Container Toolkit )</a></li><li class="l2"><a href="#main-terraform-script">Main Terraform script</a></li><li class="l1"><a href="#post-terraform-setup-">Post Terraform Setup:-</a></li><li class="l2"><a href="#terraform-plan">⤵ terraform plan</a></li><li class="l2"><a href="#terraform-apply">⤵ terraform apply</a></li><li class="l2"><a href="#ml-dev-instance-aws">⤵ ML Dev Instance (AWS)</a></li><li class="l2"><a href="#verify-driver-installation-using-nvidia-smi">Verify Driver Installation using nvidia-smi</a></li><li class="l2"><a href="#run-container-execute-nvidia-smi">⤵ Run Container &amp;amp; execute nvidia-smi</a></li><li class="l2"><a href="#pytorch-container-install-jupyter-on-pytorch-container">⤵ Pytorch Container &amp;amp; Install Jupyter on Pytorch Container</a></li><li class="l2"><a href="#accessing-jupyter-notebook-outside-ec2">⤵ Accessing Jupyter notebook outside EC2</a></li><li class="l1"><a href="#resources-">Resources:-</a></li></ul></details>
   <div class="content">
@@ -197,7 +196,6 @@
 
         set -x
 
-
         echo "Installing CUDA Drivers"
         wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
         sudo dpkg -i cuda-keyring_1.1-1_all.deb
@@ -213,7 +211,6 @@
         sudo install -m 0755 -d /etc/apt/keyrings
         sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
         sudo chmod a+r /etc/apt/keyrings/docker.asc
-
 
         # Add the repository to Apt sources:
         echo \
@@ -242,7 +239,6 @@
             nvidia-container-toolkit-base=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
             libnvidia-container-tools=${NVIDIA_CONTAINER_TOOLKIT_VERSION} \
             libnvidia-container1=${NVIDIA_CONTAINER_TOOLKIT_VERSION}
-
 
         sudo nvidia-ctk runtime configure --runtime=docker
 
@@ -275,7 +271,6 @@
             Name = "ml-dev-instance"
         }
     }
-
 
     output "instance_id" {
         description = "The ID of the EC2 instance."
@@ -319,7 +314,7 @@
 <li><a href="https://hub.docker.com/r/pytorch/pytorch/">Docker-pytorch</a></li>
 </ul>
   </div>
-  <nav class="post-updown"><a class="pn prev" href="cuda-infra-terminology.html">&larr; CUDA Compute Capability, Driver, and Toolkit Compatibility Guide</a><a class="pn next" href="prepare-dataset.html">Dataset Preparation &rarr;</a></nav>
+  <nav class="post-updown"><a class="pn prev" href="cuda-infra-terminology.html">&larr; CUDA Compute Capability, Driver, and Toolkit Compatibility Guide</a><a class="pn next" href="pytorch-dpp.html">Pytorch DDP Setup -Multi Node &rarr;</a></nav>
 </article>
 </main>
 <footer class="site-footer">
@@ -345,6 +340,9 @@ document.addEventListener('DOMContentLoaded',function(){
   });
   // copy buttons
   document.querySelectorAll('.content pre').forEach(function(pre){
+    var code=pre.querySelector('code');
+    if(code){var m=(code.className||'').match(/language-([a-z0-9]+)/i);
+      if(m && m[1]!=='text' && m[1]!=='plaintext'){pre.setAttribute('data-lang',m[1]);}}
     var btn=document.createElement('button'); btn.className='copy'; btn.textContent='Copy';
     btn.addEventListener('click',function(){
       navigator.clipboard.writeText(pre.innerText).then(function(){

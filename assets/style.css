@@ -1,10 +1,18 @@
 
+@font-face{font-family:'Inter';font-style:normal;font-weight:100 900;font-display:swap;
+src:url(fonts/inter-latin-wght-normal.woff2) format('woff2')}
+@font-face{font-family:'Inter';font-style:italic;font-weight:100 900;font-display:swap;
+src:url(fonts/inter-latin-wght-italic.woff2) format('woff2')}
 :root{--bg:#fff;--fg:#1a1a1a;--muted:#6b7280;--line:#e7e9ee;--accent:#0b63c4;
---accent-soft:#eef4fc;--code-bg:#f6f8fa;--maxw:730px}
+--accent-soft:#eef4fc;--code-bg:#f6f8fa;--maxw:730px;
+--global-theme-color:#0b63c4;--global-code-bg-color:#f6f8fa;--global-divider-color:#e7e9ee;
+--global-text-color-light:#888}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font-size:17px;line-height:1.7;
--webkit-font-smoothing:antialiased;
-font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif}
+body{margin:0;background:var(--bg);color:var(--fg);font-size:17px;line-height:1.72;
+-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+font-feature-settings:"cv05","ss01"}
+h1,h2,h3,h4,h5,.brand{letter-spacing:-.018em}
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
 main{max-width:var(--maxw);margin:0 auto;padding:0 20px}
@@ -52,6 +60,8 @@ color:var(--accent);background:var(--accent-soft);padding:2px 7px;border-radius:
 .content h2{font-size:1.32rem;margin:1.7em 0 .5em;padding-bottom:.2em;border-bottom:1px solid var(--line)}
 .content h3{font-size:1.14rem;margin:1.5em 0 .4em}
 .content h4{font-size:1.02rem;margin:1.4em 0 .4em;color:#374151}
+.content h5{font-size:.95rem;margin:1.3em 0 .3em;color:#374151;font-weight:650}
+.content hr{border:none;border-top:1px solid var(--line);margin:1.8em 0}
 .anchored{cursor:pointer}
 .anchored:hover::after{content:" #";color:var(--accent);font-weight:400;opacity:.6}
 .content p{margin:.9em 0}
@@ -75,17 +85,34 @@ border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0
 /* code */
 .content code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.88em;
 background:var(--code-bg);padding:.15em .4em;border-radius:5px}
-.content pre{position:relative;background:var(--code-bg);border:1px solid var(--line);border-radius:10px;
-padding:16px;overflow:auto;margin:1.1em 0;font-size:.85rem;line-height:1.55}
-.content pre code{background:none;padding:0;font-size:inherit}
-.content pre .copy{position:absolute;top:8px;right:8px;font-size:.72rem;border:1px solid var(--line);
-background:#fff;color:var(--muted);border-radius:6px;padding:3px 9px;cursor:pointer;opacity:0;transition:opacity .15s}
+.content pre{position:relative;background:#282c34;border:1px solid #21252b;border-radius:10px;
+padding:38px 16px 16px;overflow:auto;margin:1.3em 0;font-size:.84rem;line-height:1.6;
+box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.content pre code{background:none;padding:0;font-size:inherit;color:#abb2bf}
+.content pre[data-lang]::before{content:attr(data-lang);position:absolute;top:0;left:0;
+font-size:.67rem;letter-spacing:.07em;text-transform:uppercase;color:#8b94a3;background:#21252b;
+padding:5px 13px;border-radius:10px 0 8px 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.content pre .copy{position:absolute;top:5px;right:7px;font-size:.7rem;border:1px solid #3a3f4b;
+background:#21252b;color:#9aa4b2;border-radius:6px;padding:3px 10px;cursor:pointer;opacity:0;transition:opacity .15s}
 .content pre:hover .copy{opacity:1}
-.content pre .copy:hover{color:var(--accent);border-color:var(--accent)}
+.content pre .copy:hover{color:#fff;border-color:#6b7685}
 /* tables */
 .content table{border-collapse:collapse;width:100%;margin:1.2em 0;font-size:.9rem;display:block;overflow-x:auto}
 .content th,.content td{border:1px solid var(--line);padding:8px 11px;text-align:left}
 .content th{background:var(--code-bg);font-weight:600}
+/* al-folio architecture comparison table */
+.content table.arch-table{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85rem;border:1px dashed #999;line-height:1.5;background:#fff}
+.content .arch-table th,.content .arch-table td{border:1px dashed #bbb;padding:12px 14px;vertical-align:top;background:#fff;color:#222}
+.content .arch-table th{padding:16px 14px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.content .arch-table .section-header{background:#faf5fa;color:#c040c0;font-size:.75rem;letter-spacing:.08em;font-weight:500;padding:6px 14px;border-top:1px dashed #bbb;text-transform:uppercase}
+.content .arch-table .col-header-classic{color:#9040b0;font-size:.75rem;font-weight:600;text-transform:uppercase}
+.content .arch-table .col-header-llama{color:#2060d0;font-size:.75rem;font-weight:600;text-transform:uppercase}
+.content .arch-table .main{font-weight:600;margin-bottom:4px}
+.content .arch-table .sub{display:block;font-size:.78rem;color:#444;margin-top:5px;line-height:1.4;font-weight:400}
+.content .arch-table .note,.content .arch-table .note a{font-size:.72rem;color:#c040c0;margin-top:4px;display:block}
+.content .arch-table .comp{font-weight:600}
+.content figure.fig figcaption{text-align:center;font-size:.85rem;color:var(--muted);margin-top:8px}
+.content aside.dnote{background:var(--code-bg)}
 .katex-display{overflow-x:auto;overflow-y:hidden;padding:4px 0}
 .post-updown{display:flex;justify-content:space-between;gap:16px;margin:40px 0 10px;
 padding-top:20px;border-top:1px solid var(--line)}

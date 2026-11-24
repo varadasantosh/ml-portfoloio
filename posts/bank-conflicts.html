@@ -7,7 +7,7 @@
 <meta name="description" content="ML / AI &amp; Inference Engineering notes by Varada V N A Santosh.">
 <link rel="stylesheet" href="../assets/style.css">
 <link rel="stylesheet" href="../assets/katex/katex.min.css">
-<link rel="stylesheet" href="../assets/hljs/github.min.css">
+<link rel="stylesheet" href="../assets/hljs/atom-one-dark.min.css">
 </head>
 <body>
 <header class="site-nav">
@@ -15,7 +15,6 @@
   <nav>
     <a href="../index.html">Home</a>
     <a href="../index.html#notes">Notes</a>
-    <a href="../index.html#about">About</a>
     <a href="https://github.com/varadasantosh" target="_blank" rel="noopener">GitHub</a>
   </nav>
 </header>
@@ -89,7 +88,7 @@ Scenario-3:- Loading 16*16 matrix with Precision of Floating Point-16 Bits(Half 
 <p>https://medium.com/@fatlip/cuda-shared-memory-23cd1a0d4e39
 https://medium.com/distributed-knowledge/cuda-memory-management-use-cases-f9d340f7c704</p>
   </div>
-  <nav class="post-updown"><a class="pn prev" href="thread-indexing.html">&larr; GPU Thread Hierarchy and Indexing</a><a class="pn next" href="cuda-infra-terminology.html">CUDA Compute Capability, Driver, and Toolkit Compatibility Guide &rarr;</a></nav>
+  <nav class="post-updown"><a class="pn prev" href="thread-indexing.html">&larr; GPU Thread Hierarchy and Indexing</a><a class="pn next" href="prepare-dataset.html">Dataset Preparation &rarr;</a></nav>
 </article>
 </main>
 <footer class="site-footer">
@@ -115,6 +114,9 @@ document.addEventListener('DOMContentLoaded',function(){
   });
   // copy buttons
   document.querySelectorAll('.content pre').forEach(function(pre){
+    var code=pre.querySelector('code');
+    if(code){var m=(code.className||'').match(/language-([a-z0-9]+)/i);
+      if(m && m[1]!=='text' && m[1]!=='plaintext'){pre.setAttribute('data-lang',m[1]);}}
     var btn=document.createElement('button'); btn.className='copy'; btn.textContent='Copy';
     btn.addEventListener('click',function(){
       navigator.clipboard.writeText(pre.innerText).then(function(){
