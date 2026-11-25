@@ -1,4 +1,4 @@
-# Varada V N A Santosh — ML / Inference Engineering Notes
+# Varada V N A Santosh — ML Notes
 
 A simple, static portfolio site covering GPU/CUDA GEMM optimization, Transformers
 & attention, distributed & large-scale LLM training (DDP to ZeRO), and generative
