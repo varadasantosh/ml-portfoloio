@@ -4,10 +4,6 @@ A simple, static portfolio site covering GPU/CUDA GEMM optimization, Transformer
 & attention, distributed & large-scale LLM training (DDP to ZeRO), and generative
 models.
 
-The site is self-contained — no build step and no external CDNs for code. KaTeX
-(math) and highlight.js (code highlighting) are vendored under `assets/`, so it
-works offline and renders identically anywhere.
-
 > Note: the two GEMM articles embed a few diagrams hosted on Hashnode's image CDN
 > (plus one NERSC roofline image). These load over the web when the site is viewed
 > online. Everything else — including all LLM-training figures — is local.
